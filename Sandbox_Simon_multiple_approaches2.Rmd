@@ -1,0 +1,3262 @@
+---
+title: "Sandbox study: the effect of reward on false belief bias"
+author: "Kristian Tempelmans Plat & Simon Brett"
+date: "15 March 2018"
+output: html_document
+runtime: shiny
+---
+
+## Read me
+
+This script looks at Simon Brett's Sandbox task data from various angles.
+
+Per approach, the following analyses are done:
+
+* linear mixed model
+* linear model
+* visualisation
+
+In addition, this script investigates whether prosopagnosia traits explains task performance
+
+1. Do those participants who fail the memory task have a higher prosopagnosia score?
+
+2. In the dataset with passing participants, is there a correlation between prosopagnosia and FB bias?
+
+
+
+
+
+
+
+``` {r librarypreparation, echo = FALSE, message = FALSE, warning = FALSE}
+
+library(lme4)
+library(lmerTest)
+library(simr)
+library(plyr)
+
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(plyr)
+
+theme_set(theme_sjplot())
+
+
+```
+
+
+``` {r prep_1_2, echo = FALSE, warning = FALSE, message = FALSE}
+
+# --------
+# Option 1
+# --------
+
+# FULL
+
+    # Get dataset
+setwd("C:/Users/ct886924/Documents/STUDIES/Study1_MT/Simon_data/Full_dataset")
+Full=read.csv("Full_simondata_set.csv")
+
+    # Remove NAs (if they are present)
+Full = na.omit(Full)
+
+    # Mean AQ
+Full.AQ_means = mean(Full$AQ)
+for (i in 1:length(Full$AQ)){
+  Full$AQ.mc[i] = Full$AQ[i] - Full.AQ_means
+}
+
+    # Rename columns
+names(Full)[14] = "FBvMC"
+names(Full)[15] = "SvL"
+
+####################################################################################################
+
+
+# PASS
+
+    # Get dataset
+setwd("C:/Users/ct886924/Documents/STUDIES/Study1_MT/Simon_data")
+Pass=read.csv("MergedRdata2.csv")
+
+    # Mean AQ
+Pass.AQ_means = mean(Pass$AQ)
+for (i in 1:length(Pass$AQ)){
+  Pass$AQ.mc[i] = Pass$AQ[i] - Pass.AQ_means
+}
+
+    # Rename columns
+names(Pass)[14] = "FBvMC"
+names(Pass)[15] = "SvL"
+
+
+####################################################################################################
+
+# --------
+# Option 2
+# --------
+
+
+# FULL_ALL
+
+    # No split
+
+Full_All = Full
+
+####################################################################################################
+
+# FULL_SEP
+
+    # Split dataset into False Belief and Memory Control subset
+
+Full_FB = Full[Full$FBvMC == 1,]
+Full_MC = Full[Full$FBvMC == 2,]
+
+
+####################################################################################################
+
+
+# PASS_ALL
+
+    # No split
+
+Pass_All = Pass
+
+####################################################################################################
+
+
+# PASS_SEP
+
+    # Split dataset into False Belief and Memory Control subset
+
+Pass_FB = Pass[Pass$FBvMC == 1,]
+Pass_MC = Pass[Pass$FBvMC == 2,]
+
+
+####################################################################################################
+
+
+```
+
+
+``` {r normcheck, echo = FALSE, warning = FALSE, message = FALSE}
+
+library(nortest)
+
+
+    # Normality check for dataset
+ad.test(Full_All$Bias)
+ad.test(Pass_All$Bias)
+
+```
+
+``` {r pre_3_and_4, echo = FALSE, warning = FALSE, message = FALSE}
+# ------------
+# Option 3 & 4
+# ------------
+
+
+# FULL_ALL_s_3SD_TP ####
+
+    # Removal of outlier trials
+
+m.Full_All = mean(Full_All$Bias)
+sd.Full_All = sd(Full_All$Bias)
+
+hi.Full_All.s_3SD = m.Full_All + 3 * sd.Full_All
+lo.Full_All.s_3SD = m.Full_All - 3 * sd.Full_All
+
+Full_All_s_3SD_T = Full_All[Full_All$Bias < hi.Full_All.s_3SD,]
+Full_All_s_3SD_T = Full_All_s_3SD_T[Full_All_s_3SD_T$Bias > lo.Full_All.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Full_All_s_3SD_T.participants = ddply(Full_All_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_s_3SD_T.participants$isoutlier = rep(NA,length(Full_All_s_3SD_T.participants$Participant))
+
+m.Full_All_s_3SD_T.participants = mean(Full_All_s_3SD_T.participants$meanBias)
+sd.Full_All_s_3SD_T.participants = sd(Full_All_s_3SD_T.participants$meanBias)
+
+hi.Full_All_s_3SD_T.participants = m.Full_All_s_3SD_T.participants + 3 * sd.Full_All_s_3SD_T.participants
+lo.Full_All_s_3SD_T.participants = m.Full_All_s_3SD_T.participants - 3 * sd.Full_All_s_3SD_T.participants
+
+for (i in 1:length(Full_All_s_3SD_T.participants$meanBias)){
+  if (Full_All_s_3SD_T.participants$meanBias[i] < hi.Full_All_s_3SD_T.participants & Full_All_s_3SD_T.participants$meanBias[i] > lo.Full_All_s_3SD_T.participants){
+    Full_All_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_All_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_s_3SD_T$isgroupoutlier = rep(NA,length(Full_All_s_3SD_T$Participant))
+Group_outliers = Full_All_s_3SD_T.participants$Participant[Full_All_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_s_3SD_T$Participant)){
+  if (!is.na(match(Full_All_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_s_3SD_TP = Full_All_s_3SD_T[Full_All_s_3SD_T$isgroupoutlier == 0,]
+
+
+
+####################################################################################################
+
+# FULL_ALL_s_2SD_TP ####
+
+    # 2 SD cutoff because normality assumption is violated for Full_All data set
+
+ad.test(Full_All$Bias)
+
+    # Note: see end of section for information on normality of participant distribution
+
+hi.Full_All.s_2SD = m.Full_All + 2 * sd.Full_All
+lo.Full_All.s_2SD = m.Full_All - 2 * sd.Full_All
+
+Full_All_s_2SD_T = Full_All[Full_All$Bias < hi.Full_All.s_2SD,]
+Full_All_s_2SD_T = Full_All_s_2SD_T[Full_All_s_2SD_T$Bias > lo.Full_All.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Full_All_s_2SD_T.participants = ddply(Full_All_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_s_2SD_T.participants$isoutlier = rep(NA,length(Full_All_s_2SD_T.participants$Participant))
+
+m.Full_All_s_2SD_T.participants = mean(Full_All_s_2SD_T.participants$meanBias)
+sd.Full_All_s_2SD_T.participants = sd(Full_All_s_2SD_T.participants$meanBias)
+
+hi.Full_All_s_2SD_T.participants = m.Full_All_s_2SD_T.participants + 2 * sd.Full_All_s_2SD_T.participants
+lo.Full_All_s_2SD_T.participants = m.Full_All_s_2SD_T.participants - 2 * sd.Full_All_s_2SD_T.participants
+
+for (i in 1:length(Full_All_s_2SD_T.participants$meanBias)){
+  if (Full_All_s_2SD_T.participants$meanBias[i] < hi.Full_All_s_2SD_T.participants & Full_All_s_2SD_T.participants$meanBias[i] > lo.Full_All_s_2SD_T.participants){
+    Full_All_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_All_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_s_2SD_T$isgroupoutlier = rep(NA,length(Full_All_s_2SD_T$Participant))
+Group_outliers = Full_All_s_2SD_T.participants$Participant[Full_All_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_s_2SD_T$Participant)){
+  if (!is.na(match(Full_All_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_s_2SD_TP = Full_All_s_2SD_T[Full_All_s_2SD_T$isgroupoutlier == 0,]
+
+
+  # Note: Participant mean bias distribution is normally distributed, so maybe a s_3SD approach on the participant level is
+  #       preferable.
+ad.test(Full_All_s_2SD_T.participants$meanBias)
+    
+
+####################################################################################################
+
+# FULL_ALL_p_3SD_TP ####
+
+# Removal of outlier trials
+
+m.Full_All = mean(Full_All$Bias)
+Full_All_p.SDs = ddply(Full_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_All = sqrt(sum(Full_All_p.SDs$sdBias_squared)/length(Full_All_p.SDs$Participant))
+
+
+hi.Full_All.p_3SD = m.Full_All + 3 * psd.Full_All
+lo.Full_All.p_3SD = m.Full_All - 3 * psd.Full_All
+
+Full_All_p_3SD_T = Full_All[Full_All$Bias < hi.Full_All.p_3SD,]
+Full_All_p_3SD_T = Full_All_p_3SD_T[Full_All_p_3SD_T$Bias > lo.Full_All.p_3SD,]
+
+# Removal of outlier participants
+
+Full_All_p_3SD_T.participants = ddply(Full_All_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_p_3SD_T.participants$isoutlier = rep(NA,length(Full_All_p_3SD_T.participants$Participant))
+
+m.Full_All_p_3SD_T.participants = mean(Full_All_p_3SD_T.participants$meanBias)
+
+Full_All_p_3SD_T.SDs = ddply(Full_All_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Full_All_p_3SD_T = sqrt(sum(Full_All_p_3SD_T.SDs$sdBias_squared)/length(Full_All_p_3SD_T.SDs$Participant))
+
+hi_Full_All.p_3SD_T = m.Full_All_p_3SD_T.participants + 3 * psd.Full_All_p_3SD_T
+lo_Full_All.p_3SD_T = m.Full_All_p_3SD_T.participants - 3 * psd.Full_All_p_3SD_T
+
+for (i in 1:length(Full_All_p_3SD_T.participants$meanBias)){
+  if (Full_All_p_3SD_T.participants$meanBias[i] < hi_Full_All.p_3SD_T & Full_All_p_3SD_T.participants$meanBias[i] > lo_Full_All.p_3SD_T){
+    Full_All_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_All_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_p_3SD_T$isgroupoutlier = rep(NA,length(Full_All_p_3SD_T$Participant))
+Group_outliers = Full_All_p_3SD_T.participants$Participant[Full_All_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_p_3SD_T$Participant)){
+  if (!is.na(match(Full_All_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_p_3SD_TP = Full_All_p_3SD_T[Full_All_p_3SD_T$isgroupoutlier == 0,]
+
+
+
+
+####################################################################################################
+
+# FULL_ALL_p_2SD_TP ####
+
+
+# Removal of outlier trials
+
+m.Full_All = mean(Full_All$Bias)
+Full_All_p.SDs = ddply(Full_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_All = sqrt(sum(Full_All_p.SDs$sdBias_squared)/length(Full_All_p.SDs$Participant))
+
+
+hi.Full_All.p_2SD = m.Full_All + 2 * psd.Full_All
+lo.Full_All.p_2SD = m.Full_All - 2 * psd.Full_All
+
+Full_All_p_2SD_T = Full_All[Full_All$Bias < hi.Full_All.p_2SD,]
+Full_All_p_2SD_T = Full_All_p_2SD_T[Full_All_p_2SD_T$Bias > lo.Full_All.p_2SD,]
+
+# Removal of outlier participants
+
+Full_All_p_2SD_T.participants = ddply(Full_All_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_p_2SD_T.participants$isoutlier = rep(NA,length(Full_All_p_2SD_T.participants$Participant))
+
+m.Full_All_p_2SD_T.participants = mean(Full_All_p_2SD_T.participants$meanBias)
+
+Full_All_p_2SD_T.SDs = ddply(Full_All_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Full_All_p_2SD_T = sqrt(sum(Full_All_p_2SD_T.SDs$sdBias_squared)/length(Full_All_p_2SD_T.SDs$Participant))
+
+hi_Full_All.p_2SD_T = m.Full_All_p_2SD_T.participants + 2 * psd.Full_All_p_2SD_T
+lo_Full_All.p_2SD_T = m.Full_All_p_2SD_T.participants - 2 * psd.Full_All_p_2SD_T
+
+for (i in 1:length(Full_All_p_2SD_T.participants$meanBias)){
+  if (Full_All_p_2SD_T.participants$meanBias[i] < hi_Full_All.p_2SD_T & Full_All_p_2SD_T.participants$meanBias[i] > lo_Full_All.p_2SD_T){
+    Full_All_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_All_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_p_2SD_T$isgroupoutlier = rep(NA,length(Full_All_p_2SD_T$Participant))
+Group_outliers = Full_All_p_2SD_T.participants$Participant[Full_All_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_p_2SD_T$Participant)){
+  if (!is.na(match(Full_All_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_p_2SD_TP = Full_All_p_2SD_T[Full_All_p_2SD_T$isgroupoutlier == 0,]
+
+
+
+####################################################################################################
+
+
+# FULL_ALL_s_3SD_PT ####
+
+    # Removal of outlier participants
+
+Full_All_s_3SD.participants = ddply(Full_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_s_3SD.participants$isoutlier = rep(NA,length(Full_All_s_3SD.participants$Participant))
+
+m.Full_All_s_3SD.participants = mean(Full_All_s_3SD.participants$meanBias)
+sd.Full_All_s_3SD.participants = sd(Full_All_s_3SD.participants$meanBias)
+
+hi.Full_All_s_3SD.participants = m.Full_All_s_3SD.participants + 3 * sd.Full_All_s_3SD.participants
+lo.Full_All_s_3SD.participants = m.Full_All_s_3SD.participants - 3 * sd.Full_All_s_3SD.participants
+
+for (i in 1:length(Full_All_s_3SD.participants$meanBias)){
+  if (Full_All_s_3SD.participants$meanBias[i] < hi.Full_All_s_3SD.participants & Full_All_s_3SD.participants$meanBias[i] > lo.Full_All_s_3SD.participants){
+    Full_All_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Full_All_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_s_3SD_P = Full_All
+
+Full_All_s_3SD_P$isgroupoutlier = rep(NA,length(Full_All_s_3SD_P$Participant))
+Group_outliers = Full_All_s_3SD.participants$Participant[Full_All_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_s_3SD_P$Participant)){
+  if (!is.na(match(Full_All_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Full_All_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_All_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_s_3SD_P = Full_All_s_3SD_P[Full_All_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_All_s_3SD_P = mean(Full_All_s_3SD_P$Bias)
+sd.Full_All_s_3SD_P = sd(Full_All_s_3SD_P$Bias)
+
+hi.Full_All.s_3SD_P = m.Full_All_s_3SD_P + 3 * sd.Full_All_s_3SD_P
+lo.Full_All.s_3SD_P = m.Full_All_s_3SD_P - 3 * sd.Full_All_s_3SD_P
+
+Full_All_s_3SD_PT = Full_All_s_3SD_P[Full_All_s_3SD_P$Bias < hi.Full_All.s_3SD_P,]
+Full_All_s_3SD_PT = Full_All_s_3SD_PT[Full_All_s_3SD_PT$Bias > lo.Full_All.s_3SD_P,]
+
+
+####################################################################################################
+
+# FULL_ALL_s_2SD_PT ####
+
+# 2 SD cutoff because normality assumption is violated for Full_All data set
+
+Full_All_s_2SD.participants = ddply(Full_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_s_2SD.participants$isoutlier = rep(NA,length(Full_All_s_2SD.participants$Participant))
+
+m.Full_All_s_2SD.participants = mean(Full_All_s_2SD.participants$meanBias)
+sd.Full_All_s_2SD.participants = sd(Full_All_s_2SD.participants$meanBias)
+
+hi.Full_All_s_2SD.participants = m.Full_All_s_2SD.participants + 2 * sd.Full_All_s_2SD.participants
+lo.Full_All_s_2SD.participants = m.Full_All_s_2SD.participants - 2 * sd.Full_All_s_2SD.participants
+
+for (i in 1:length(Full_All_s_2SD.participants$meanBias)){
+  if (Full_All_s_2SD.participants$meanBias[i] < hi.Full_All_s_2SD.participants & Full_All_s_2SD.participants$meanBias[i] > lo.Full_All_s_2SD.participants){
+    Full_All_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_All_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_s_2SD_P = Full_All
+
+Full_All_s_2SD_P$isgroupoutlier = rep(NA,length(Full_All_s_2SD_P$Participant))
+Group_outliers = Full_All_s_2SD.participants$Participant[Full_All_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_s_2SD_P$Participant)){
+  if (!is.na(match(Full_All_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Full_All_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_All_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_s_2SD_P = Full_All_s_2SD_P[Full_All_s_2SD_P$isgroupoutlier == 0,]
+
+  # Note: Participant mean bias is not normally distributed, so s_2SD approach is preferable.
+ad.test(Full_All_s_2SD.participants$meanBias)
+
+# Removal of outlier trials
+
+m.Full_All_s_2SD_P = mean(Full_All_s_2SD_P$Bias)
+sd.Full_All_s_2SD_P = sd(Full_All_s_2SD_P$Bias)
+
+hi.Full_All.s_2SD_P = m.Full_All_s_2SD_P + 2 * sd.Full_All_s_2SD_P
+lo.Full_All.s_2SD_P = m.Full_All_s_2SD_P - 2 * sd.Full_All_s_2SD_P
+
+Full_All_s_2SD_PT = Full_All_s_2SD_P[Full_All_s_2SD_P$Bias < hi.Full_All.s_2SD_P,]
+Full_All_s_2SD_PT = Full_All_s_2SD_PT[Full_All_s_2SD_PT$Bias > lo.Full_All.s_2SD_P,]
+
+
+####################################################################################################
+
+# FULL_ALL_p_3SD_PT ####
+
+
+# Removal of outlier participants
+
+
+
+Full_All_p_3SD_P.participants = ddply(Full_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_p_3SD_P.participants$isoutlier = rep(NA,length(Full_All_p_3SD_P.participants$Participant))
+
+m.Full_All_p_3SD_P.participants = mean(Full_All_p_3SD_P.participants$meanBias)
+
+Full_All_p_3SD_P.SDs = ddply(Full_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Full_All_p_3SD_P = sqrt(sum(Full_All_p_3SD_P.SDs$sdBias_squared)/length(Full_All_p_3SD_P.SDs$Participant))
+
+hi_Full_All.p_3SD_P = m.Full_All_p_3SD_P.participants + 3 * psd.Full_All_p_3SD_P
+lo_Full_All.p_3SD_P = m.Full_All_p_3SD_P.participants - 3 * psd.Full_All_p_3SD_P
+
+for (i in 1:length(Full_All_p_3SD_P.participants$meanBias)){
+  if (Full_All_p_3SD_P.participants$meanBias[i] < hi_Full_All.p_3SD_P & Full_All_p_3SD_P.participants$meanBias[i] > lo_Full_All.p_3SD_P){
+    Full_All_p_3SD_P.participants$isoutlier[i] = 0
+  } else {
+    Full_All_p_3SD_P.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_p_3SD_T = Full_All
+Full_All_p_3SD_T$isgroupoutlier = rep(NA,length(Full_All_p_3SD_T$Participant))
+Group_outliers = Full_All_p_3SD_T.participants$Participant[Full_All_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_p_3SD_T$Participant)){
+  if (!is.na(match(Full_All_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_p_3SD_TP = Full_All_p_3SD_T[Full_All_p_3SD_T$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_All_p_3SD_TP = mean(Full_All_p_3SD_TP$Bias)
+Full_All_p_3SD_TP_p.SDs = ddply(Full_All_p_3SD_TP, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_All_p_3SD_TP = sqrt(sum(Full_All_p_3SD_TP_p.SDs$sdBias_squared)/length(Full_All_p_3SD_TP_p.SDs$Participant))
+
+
+hi.Full_All_p_3SD_TP.p_3SD = m.Full_All_p_3SD_TP + 3 * psd.Full_All_p_3SD_TP
+lo.Full_All_p_3SD_TP.p_3SD = m.Full_All_p_3SD_TP - 3 * psd.Full_All_p_3SD_TP
+
+Full_All_p_3SD_TP_p_3SD_T = Full_All_p_3SD_TP[Full_All_p_3SD_TP$Bias < hi.Full_All_p_3SD_TP.p_3SD,]
+Full_All_p_3SD_TP_p_3SD_T = Full_All_p_3SD_TP_p_3SD_T[Full_All_p_3SD_TP_p_3SD_T$Bias > lo.Full_All_p_3SD_TP.p_3SD,]
+
+####################################################################################################
+
+# FULL_ALL_p_2SD_PT ####
+
+
+
+Full_All_p_2SD_P.participants = ddply(Full_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_p_2SD_P.participants$isoutlier = rep(NA,length(Full_All_p_2SD_P.participants$Participant))
+
+m.Full_All_p_2SD_P.participants = mean(Full_All_p_2SD_P.participants$meanBias)
+
+Full_All_p_2SD_P.SDs = ddply(Full_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Full_All_p_2SD_P = sqrt(sum(Full_All_p_2SD_P.SDs$sdBias_squared)/length(Full_All_p_2SD_P.SDs$Participant))
+
+hi_Full_All.p_2SD_P = m.Full_All_p_2SD_P.participants + 2 * psd.Full_All_p_2SD_P
+lo_Full_All.p_2SD_P = m.Full_All_p_2SD_P.participants - 2 * psd.Full_All_p_2SD_P
+
+for (i in 1:length(Full_All_p_2SD_P.participants$meanBias)){
+  if (Full_All_p_2SD_P.participants$meanBias[i] < hi_Full_All.p_2SD_P & Full_All_p_2SD_P.participants$meanBias[i] > lo_Full_All.p_2SD_P){
+    Full_All_p_2SD_P.participants$isoutlier[i] = 0
+  } else {
+    Full_All_p_2SD_P.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_p_2SD_T = Full_All
+Full_All_p_2SD_T$isgroupoutlier = rep(NA,length(Full_All_p_2SD_T$Participant))
+Group_outliers = Full_All_p_2SD_T.participants$Participant[Full_All_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_p_2SD_T$Participant)){
+  if (!is.na(match(Full_All_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_All_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_All_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_p_2SD_TP = Full_All_p_2SD_T[Full_All_p_2SD_T$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_All_p_2SD_TP = mean(Full_All_p_2SD_TP$Bias)
+Full_All_p_2SD_TP_p.SDs = ddply(Full_All_p_2SD_TP, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_All_p_2SD_TP = sqrt(sum(Full_All_p_2SD_TP_p.SDs$sdBias_squared)/length(Full_All_p_2SD_TP_p.SDs$Participant))
+
+
+hi.Full_All_p_2SD_TP.p_2SD = m.Full_All_p_2SD_TP + 2 * psd.Full_All_p_2SD_TP
+lo.Full_All_p_2SD_TP.p_2SD = m.Full_All_p_2SD_TP - 2 * psd.Full_All_p_2SD_TP
+
+Full_All_p_2SD_TP_p_2SD_T = Full_All_p_2SD_TP[Full_All_p_2SD_TP$Bias < hi.Full_All_p_2SD_TP.p_2SD,]
+Full_All_p_2SD_TP_p_2SD_T = Full_All_p_2SD_TP_p_2SD_T[Full_All_p_2SD_TP_p_2SD_T$Bias > lo.Full_All_p_2SD_TP.p_2SD,]
+
+####################################################################################################
+
+
+
+# FULL_SEP_s_3SD_TP ####
+
+# FB part
+
+m.Full_FB = mean(Full_FB$Bias)
+sd.Full_FB = sd(Full_FB$Bias)
+
+hi.Full_FB.s_3SD = m.Full_FB + 3 * sd.Full_FB
+lo.Full_FB.s_3SD = m.Full_FB - 3 * sd.Full_FB
+
+Full_FB_s_3SD_T = Full_FB[Full_FB$Bias < hi.Full_FB.s_3SD,]
+Full_FB_s_3SD_T = Full_FB_s_3SD_T[Full_FB_s_3SD_T$Bias > lo.Full_FB.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Full_FB_s_3SD_T.participants = ddply(Full_FB_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_s_3SD_T.participants$isoutlier = rep(NA,length(Full_FB_s_3SD_T.participants$Participant))
+
+m.Full_FB_s_3SD_T.participants = mean(Full_FB_s_3SD_T.participants$meanBias)
+sd.Full_FB_s_3SD_T.participants = sd(Full_FB_s_3SD_T.participants$meanBias)
+
+hi.Full_FB_s_3SD_T.participants = m.Full_FB_s_3SD_T.participants + 3 * sd.Full_FB_s_3SD_T.participants
+lo.Full_FB_s_3SD_T.participants = m.Full_FB_s_3SD_T.participants - 3 * sd.Full_FB_s_3SD_T.participants
+
+for (i in 1:length(Full_FB_s_3SD_T.participants$meanBias)){
+  if (Full_FB_s_3SD_T.participants$meanBias[i] < hi.Full_FB_s_3SD_T.participants & Full_FB_s_3SD_T.participants$meanBias[i] > lo.Full_FB_s_3SD_T.participants){
+    Full_FB_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_s_3SD_T$isgroupoutlier = rep(NA,length(Full_FB_s_3SD_T$Participant))
+Group_outliers = Full_FB_s_3SD_T.participants$Participant[Full_FB_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_s_3SD_T$Participant)){
+  if (!is.na(match(Full_FB_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_FB_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_s_3SD_TP = Full_FB_s_3SD_T[Full_FB_s_3SD_T$isgroupoutlier == 0,]
+
+# MC part
+
+m.Full_MC = mean(Full_MC$Bias)
+sd.Full_MC = sd(Full_MC$Bias)
+
+hi.Full_MC.s_3SD = m.Full_MC + 3 * sd.Full_MC
+lo.Full_MC.s_3SD = m.Full_MC - 3 * sd.Full_MC
+
+Full_MC_s_3SD_T = Full_MC[Full_MC$Bias < hi.Full_MC.s_3SD,]
+Full_MC_s_3SD_T = Full_MC_s_3SD_T[Full_MC_s_3SD_T$Bias > lo.Full_MC.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Full_MC_s_3SD_T.participants = ddply(Full_MC_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_s_3SD_T.participants$isoutlier = rep(NA,length(Full_MC_s_3SD_T.participants$Participant))
+
+m.Full_MC_s_3SD_T.participants = mean(Full_MC_s_3SD_T.participants$meanBias)
+sd.Full_MC_s_3SD_T.participants = sd(Full_MC_s_3SD_T.participants$meanBias)
+
+hi.Full_MC_s_3SD_T.participants = m.Full_MC_s_3SD_T.participants + 3 * sd.Full_MC_s_3SD_T.participants
+lo.Full_MC_s_3SD_T.participants = m.Full_MC_s_3SD_T.participants - 3 * sd.Full_MC_s_3SD_T.participants
+
+for (i in 1:length(Full_MC_s_3SD_T.participants$meanBias)){
+  if (Full_MC_s_3SD_T.participants$meanBias[i] < hi.Full_MC_s_3SD_T.participants & Full_MC_s_3SD_T.participants$meanBias[i] > lo.Full_MC_s_3SD_T.participants){
+    Full_MC_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_s_3SD_T$isgroupoutlier = rep(NA,length(Full_MC_s_3SD_T$Participant))
+Group_outliers = Full_MC_s_3SD_T.participants$Participant[Full_MC_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_s_3SD_T$Participant)){
+  if (!is.na(match(Full_MC_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_MC_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_s_3SD_TP = Full_MC_s_3SD_T[Full_MC_s_3SD_T$isgroupoutlier == 0,]
+
+
+# Combine
+
+Full_Sep_s_3SD_TP = rbind(Full_FB_s_3SD_TP,Full_MC_s_3SD_TP)
+
+####################################################################################################
+
+# FULL_SEP_s_2SD_TP ####
+
+# 2 SD approach because both parts are not normally distributed
+ad.test(Full_FB$Bias)
+ad.test(Full_MC$Bias)
+
+# FB part
+
+m.Full_FB = mean(Full_FB$Bias)
+sd.Full_FB = sd(Full_FB$Bias)
+
+hi.Full_FB.s_2SD = m.Full_FB + 2 * sd.Full_FB
+lo.Full_FB.s_2SD = m.Full_FB - 2 * sd.Full_FB
+
+Full_FB_s_2SD_T = Full_FB[Full_FB$Bias < hi.Full_FB.s_2SD,]
+Full_FB_s_2SD_T = Full_FB_s_2SD_T[Full_FB_s_2SD_T$Bias > lo.Full_FB.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Full_FB_s_2SD_T.participants = ddply(Full_FB_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_s_2SD_T.participants$isoutlier = rep(NA,length(Full_FB_s_2SD_T.participants$Participant))
+
+m.Full_FB_s_2SD_T.participants = mean(Full_FB_s_2SD_T.participants$meanBias)
+sd.Full_FB_s_2SD_T.participants = sd(Full_FB_s_2SD_T.participants$meanBias)
+
+hi.Full_FB_s_2SD_T.participants = m.Full_FB_s_2SD_T.participants + 2 * sd.Full_FB_s_2SD_T.participants
+lo.Full_FB_s_2SD_T.participants = m.Full_FB_s_2SD_T.participants - 2 * sd.Full_FB_s_2SD_T.participants
+
+for (i in 1:length(Full_FB_s_2SD_T.participants$meanBias)){
+  if (Full_FB_s_2SD_T.participants$meanBias[i] < hi.Full_FB_s_2SD_T.participants & Full_FB_s_2SD_T.participants$meanBias[i] > lo.Full_FB_s_2SD_T.participants){
+    Full_FB_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution normally distributed, so maybe s_3SD approach is preferable for participants
+ad.test(Full_FB_s_2SD_T.participants$meanBias)
+
+    # Dataset specification
+Full_FB_s_2SD_T$isgroupoutlier = rep(NA,length(Full_FB_s_2SD_T$Participant))
+Group_outliers = Full_FB_s_2SD_T.participants$Participant[Full_FB_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_s_2SD_T$Participant)){
+  if (!is.na(match(Full_FB_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_FB_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_s_2SD_TP = Full_FB_s_2SD_T[Full_FB_s_2SD_T$isgroupoutlier == 0,]
+
+# MC part
+
+m.Full_MC = mean(Full_MC$Bias)
+sd.Full_MC = sd(Full_MC$Bias)
+
+hi.Full_MC.s_2SD = m.Full_MC + 2 * sd.Full_MC
+lo.Full_MC.s_2SD = m.Full_MC - 2 * sd.Full_MC
+
+Full_MC_s_2SD_T = Full_MC[Full_MC$Bias < hi.Full_MC.s_2SD,]
+Full_MC_s_2SD_T = Full_MC_s_2SD_T[Full_MC_s_2SD_T$Bias > lo.Full_MC.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Full_MC_s_2SD_T.participants = ddply(Full_MC_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_s_2SD_T.participants$isoutlier = rep(NA,length(Full_MC_s_2SD_T.participants$Participant))
+
+m.Full_MC_s_2SD_T.participants = mean(Full_MC_s_2SD_T.participants$meanBias)
+sd.Full_MC_s_2SD_T.participants = sd(Full_MC_s_2SD_T.participants$meanBias)
+
+hi.Full_MC_s_2SD_T.participants = m.Full_MC_s_2SD_T.participants + 2 * sd.Full_MC_s_2SD_T.participants
+lo.Full_MC_s_2SD_T.participants = m.Full_MC_s_2SD_T.participants - 2 * sd.Full_MC_s_2SD_T.participants
+
+for (i in 1:length(Full_MC_s_2SD_T.participants$meanBias)){
+  if (Full_MC_s_2SD_T.participants$meanBias[i] < hi.Full_MC_s_2SD_T.participants & Full_MC_s_2SD_T.participants$meanBias[i] > lo.Full_MC_s_2SD_T.participants){
+    Full_MC_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normal, so s_2SD approach is preferable (but this would result in a difference for the half data sets)
+ad.test(Full_MC_s_2SD_T.participants$meanBias)
+
+    # Dataset specification
+Full_MC_s_2SD_T$isgroupoutlier = rep(NA,length(Full_MC_s_2SD_T$Participant))
+Group_outliers = Full_MC_s_2SD_T.participants$Participant[Full_MC_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_s_2SD_T$Participant)){
+  if (!is.na(match(Full_MC_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_MC_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_s_2SD_TP = Full_MC_s_2SD_T[Full_MC_s_2SD_T$isgroupoutlier == 0,]
+
+
+# Combine
+
+Full_Sep_s_2SD_TP = rbind(Full_FB_s_2SD_TP,Full_MC_s_2SD_TP)
+
+####################################################################################################
+
+# FULL_SEP_p_3SD_TP ####
+
+# FB part 
+
+# Remove trial outliers
+
+m.Full_FB = mean(Full_FB$Bias)
+Full_FB_p.SDs = ddply(Full_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB = sqrt(sum(Full_FB_p.SDs$sdBias_squared)/length(Full_FB_p.SDs$Participant))
+
+hi.Full_FB_p.3SD = m.Full_FB + 3 * psd.Full_FB
+lo.Full_FB_p.3SD = m.Full_FB - 3 * psd.Full_FB
+
+Full_FB_p_3SD_T = Full_FB[Full_FB$Bias < hi.Full_FB_p.3SD,]
+Full_FB_p_3SD_T = Full_FB_p_3SD_T[Full_FB_p_3SD_T$Bias > lo.Full_FB_p.3SD,]
+
+
+# Remove outlier participants
+
+Full_FB_p_3SD_T.participants = ddply(Full_FB_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_p_3SD_T.participants$isoutlier = rep(NA,length(Full_FB_p_3SD_T.participants$Participant))
+
+m.Full_FB_p_3SD_T.participants = mean(Full_FB_p_3SD_T.participants$meanBias)
+
+
+Full_FB_T.SDs = ddply(Full_FB_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB_3SD_T.participants = sqrt(sum(Full_FB_T.SDs$sdBias_squared)/length(Full_FB_T.SDs$Participant))
+
+hi.Full_FB_p_3SD_T.participants = m.Full_FB_p_3SD_T.participants + 3 * psd.Full_FB_3SD_T.participants
+lo.Full_FB_p_3SD_T.participants = m.Full_FB_p_3SD_T.participants - 3 * psd.Full_FB_3SD_T.participants
+
+for (i in 1:length(Full_FB_p_3SD_T.participants$meanBias)){
+  if (Full_FB_p_3SD_T.participants$meanBias[i] < hi.Full_FB_p_3SD_T.participants & Full_FB_p_3SD_T.participants$meanBias[i] > lo.Full_FB_p_3SD_T.participants){
+    Full_FB_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_p_3SD_T$isgroupoutlier = rep(NA,length(Full_FB_p_3SD_T$Participant))
+Group_outliers = Full_FB_p_3SD_T.participants$Participant[Full_FB_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_p_3SD_T$Participant)){
+  if (!is.na(match(Full_FB_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_FB_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_p_3SD_TP = Full_FB_p_3SD_T[Full_FB_p_3SD_T$isgroupoutlier == 0,]
+
+
+# MC part
+
+
+# Remove trial outliers
+
+m.Full_MC = mean(Full_MC$Bias)
+Full_MC_p.SDs = ddply(Full_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC = sqrt(sum(Full_MC_p.SDs$sdBias_squared)/length(Full_MC_p.SDs$Participant))
+
+hi.Full_MC_p.3SD = m.Full_MC + 3 * psd.Full_MC
+lo.Full_MC_p.3SD = m.Full_MC - 3 * psd.Full_MC
+
+Full_MC_p_3SD_T = Full_MC[Full_MC$Bias < hi.Full_MC_p.3SD,]
+Full_MC_p_3SD_T = Full_MC_p_3SD_T[Full_MC_p_3SD_T$Bias > lo.Full_MC_p.3SD,]
+
+
+
+
+# Remove outlier participants
+
+Full_MC_p_3SD_T.participants = ddply(Full_MC_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_p_3SD_T.participants$isoutlier = rep(NA,length(Full_MC_p_3SD_T.participants$Participant))
+
+m.Full_MC_p_3SD_T.participants = mean(Full_MC_p_3SD_T.participants$meanBias)
+
+
+Full_MC_T.SDs = ddply(Full_MC_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC.participants = sqrt(sum(Full_MC_T.SDs$sdBias_squared)/length(Full_MC_T.SDs$Participant))
+
+hi.Full_MC_p_3SD_T.participants = m.Full_MC_p_3SD_T.participants + 3 * psd.Full_MC.participants
+lo.Full_MC_p_3SD_T.participants = m.Full_MC_p_3SD_T.participants - 3 * psd.Full_MC.participants
+
+for (i in 1:length(Full_MC_p_3SD_T.participants$meanBias)){
+  if (Full_MC_p_3SD_T.participants$meanBias[i] < hi.Full_MC_p_3SD_T.participants & Full_MC_p_3SD_T.participants$meanBias[i] > lo.Full_MC_p_3SD_T.participants){
+    Full_MC_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_p_3SD_T$isgroupoutlier = rep(NA,length(Full_MC_p_3SD_T$Participant))
+Group_outliers = Full_MC_p_3SD_T.participants$Participant[Full_MC_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_p_3SD_T$Participant)){
+  if (!is.na(match(Full_MC_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Full_MC_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_p_3SD_TP = Full_MC_p_3SD_T[Full_MC_p_3SD_T$isgroupoutlier == 0,]
+
+
+
+####################################################################################################
+
+# FULL_SEP_p_2SD_TP ####
+
+
+# FB part 
+
+# Remove trial outliers
+
+m.Full_FB = mean(Full_FB$Bias)
+Full_FB_p.SDs = ddply(Full_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB = sqrt(sum(Full_FB_p.SDs$sdBias_squared)/length(Full_FB_p.SDs$Participant))
+
+hi.Full_FB_p.2SD = m.Full_FB + 2 * psd.Full_FB
+lo.Full_FB_p.2SD = m.Full_FB - 2 * psd.Full_FB
+
+Full_FB_p_2SD_T = Full_FB[Full_FB$Bias < hi.Full_FB_p.2SD,]
+Full_FB_p_2SD_T = Full_FB_p_2SD_T[Full_FB_p_2SD_T$Bias > lo.Full_FB_p.2SD,]
+
+
+
+
+# Remove outlier participants
+
+Full_FB_p_2SD_T.participants = ddply(Full_FB_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_p_2SD_T.participants$isoutlier = rep(NA,length(Full_FB_p_2SD_T.participants$Participant))
+
+m.Full_FB_p_2SD_T.participants = mean(Full_FB_p_2SD_T.participants$meanBias)
+
+
+Full_FB_T.SDs = ddply(Full_FB_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB_T.participants = sqrt(sum(Full_FB_T.SDs$sdBias_squared)/length(Full_FB_T.SDs$Participant))
+
+hi.Full_FB_p_2SD_T.participants = m.Full_FB_p_2SD_T.participants + 2 * psd.Full_FB_T.participants
+lo.Full_FB_p_2SD_T.participants = m.Full_FB_p_2SD_T.participants - 2 * psd.Full_FB_T.participants
+
+for (i in 1:length(Full_FB_p_2SD_T.participants$meanBias)){
+  if (Full_FB_p_2SD_T.participants$meanBias[i] < hi.Full_FB_p_2SD_T.participants & Full_FB_p_2SD_T.participants$meanBias[i] > lo.Full_FB_p_2SD_T.participants){
+    Full_FB_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_p_2SD_T$isgroupoutlier = rep(NA,length(Full_FB_p_2SD_T$Participant))
+Group_outliers = Full_FB_p_2SD_T.participants$Participant[Full_FB_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_p_2SD_T$Participant)){
+  if (!is.na(match(Full_FB_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_FB_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_p_2SD_TP = Full_FB_p_2SD_T[Full_FB_p_2SD_T$isgroupoutlier == 0,]
+
+
+# MC part
+
+
+# Remove trial outliers
+
+m.Full_MC = mean(Full_MC$Bias)
+Full_MC_p.SDs = ddply(Full_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC = sqrt(sum(Full_MC_p.SDs$sdBias_squared)/length(Full_MC_p.SDs$Participant))
+
+hi.Full_MC_p.2SD = m.Full_MC + 2 * psd.Full_MC
+lo.Full_MC_p.2SD = m.Full_MC - 2 * psd.Full_MC
+
+Full_MC_p_2SD_T = Full_MC[Full_MC$Bias < hi.Full_MC_p.2SD,]
+Full_MC_p_2SD_T = Full_MC_p_2SD_T[Full_MC_p_2SD_T$Bias > lo.Full_MC_p.2SD,]
+
+
+
+
+# Remove outlier participants
+
+Full_MC_p_2SD_T.participants = ddply(Full_MC_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_p_2SD_T.participants$isoutlier = rep(NA,length(Full_MC_p_2SD_T.participants$Participant))
+
+m.Full_MC_p_2SD_T.participants = mean(Full_MC_p_2SD_T.participants$meanBias)
+
+
+Full_MC_T.SDs = ddply(Full_MC_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC.participants = sqrt(sum(Full_MC_T.SDs$sdBias_squared)/length(Full_MC_T.SDs$Participant))
+
+hi.Full_MC_p_2SD_T.participants = m.Full_MC_p_2SD_T.participants + 2 * psd.Full_MC.participants
+lo.Full_MC_p_2SD_T.participants = m.Full_MC_p_2SD_T.participants - 2 * psd.Full_MC.participants
+
+for (i in 1:length(Full_MC_p_2SD_T.participants$meanBias)){
+  if (Full_MC_p_2SD_T.participants$meanBias[i] < hi.Full_MC_p_2SD_T.participants & Full_MC_p_2SD_T.participants$meanBias[i] > lo.Full_MC_p_2SD_T.participants){
+    Full_MC_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_p_2SD_T$isgroupoutlier = rep(NA,length(Full_MC_p_2SD_T$Participant))
+Group_outliers = Full_MC_p_2SD_T.participants$Participant[Full_MC_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_p_2SD_T$Participant)){
+  if (!is.na(match(Full_MC_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Full_MC_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_p_2SD_TP = Full_MC_p_2SD_T[Full_MC_p_2SD_T$isgroupoutlier == 0,]
+
+
+####################################################################################################
+
+
+# FULL_SEP_s_3SD_PT ####
+
+# FB part
+
+Full_FB_s_3SD.participants = ddply(Full_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_s_3SD.participants$isoutlier = rep(NA,length(Full_FB_s_3SD.participants$Participant))
+
+m.Full_FB_s_3SD.participants = mean(Full_FB_s_3SD.participants$meanBias)
+sd.Full_FB_s_3SD.participants = sd(Full_FB_s_3SD.participants$meanBias)
+
+hi.Full_FB_s_3SD.participants = m.Full_FB_s_3SD.participants + 3 * sd.Full_FB_s_3SD.participants
+lo.Full_FB_s_3SD.participants = m.Full_FB_s_3SD.participants - 3 * sd.Full_FB_s_3SD.participants
+
+for (i in 1:length(Full_FB_s_3SD.participants$meanBias)){
+  if (Full_FB_s_3SD.participants$meanBias[i] < hi.Full_FB_s_3SD.participants & Full_FB_s_3SD.participants$meanBias[i] > lo.Full_FB_s_3SD.participants){
+    Full_FB_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_s_3SD_P = Full_FB
+
+Full_FB_s_3SD_P$isgroupoutlier = rep(NA,length(Full_FB_s_3SD_P$Participant))
+Group_outliers = Full_FB_s_3SD.participants$Participant[Full_FB_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_s_3SD_P$Participant)){
+  if (!is.na(match(Full_FB_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Full_FB_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_s_3SD_P = Full_FB_s_3SD_P[Full_FB_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_FB_s_3SD_P = mean(Full_FB_s_3SD_P$Bias)
+sd.Full_FB_s_3SD_P = sd(Full_FB_s_3SD_P$Bias)
+
+hi.Full_FB.s_3SD_P = m.Full_FB_s_3SD_P + 3 * sd.Full_FB_s_3SD_P
+lo.Full_FB.s_3SD_P = m.Full_FB_s_3SD_P - 3 * sd.Full_FB_s_3SD_P
+
+Full_FB_s_3SD_PT = Full_FB_s_3SD_P[Full_FB_s_3SD_P$Bias < hi.Full_FB.s_3SD_P,]
+Full_FB_s_3SD_PT = Full_FB_s_3SD_PT[Full_FB_s_3SD_PT$Bias > lo.Full_FB.s_3SD_P,]
+
+# MC part
+
+Full_MC_s_3SD.participants = ddply(Full_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_s_3SD.participants$isoutlier = rep(NA,length(Full_MC_s_3SD.participants$Participant))
+
+m.Full_MC_s_3SD.participants = mean(Full_MC_s_3SD.participants$meanBias)
+sd.Full_MC_s_3SD.participants = sd(Full_MC_s_3SD.participants$meanBias)
+
+hi.Full_MC_s_3SD.participants = m.Full_MC_s_3SD.participants + 3 * sd.Full_MC_s_3SD.participants
+lo.Full_MC_s_3SD.participants = m.Full_MC_s_3SD.participants - 3 * sd.Full_MC_s_3SD.participants
+
+for (i in 1:length(Full_MC_s_3SD.participants$meanBias)){
+  if (Full_MC_s_3SD.participants$meanBias[i] < hi.Full_MC_s_3SD.participants & Full_MC_s_3SD.participants$meanBias[i] > lo.Full_MC_s_3SD.participants){
+    Full_MC_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_s_3SD_P = Full_MC
+
+Full_MC_s_3SD_P$isgroupoutlier = rep(NA,length(Full_MC_s_3SD_P$Participant))
+Group_outliers = Full_MC_s_3SD.participants$Participant[Full_MC_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_s_3SD_P$Participant)){
+  if (!is.na(match(Full_MC_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Full_MC_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_s_3SD_P = Full_MC_s_3SD_P[Full_MC_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_MC_s_3SD_P = mean(Full_MC_s_3SD_P$Bias)
+sd.Full_MC_s_3SD_P = sd(Full_MC_s_3SD_P$Bias)
+
+hi.Full_MC.s_3SD_P = m.Full_MC_s_3SD_P + 3 * sd.Full_MC_s_3SD_P
+lo.Full_MC.s_3SD_P = m.Full_MC_s_3SD_P - 3 * sd.Full_MC_s_3SD_P
+
+Full_MC_s_3SD_PT = Full_MC_s_3SD_P[Full_MC_s_3SD_P$Bias < hi.Full_MC.s_3SD_P,]
+Full_MC_s_3SD_PT = Full_MC_s_3SD_PT[Full_MC_s_3SD_PT$Bias > lo.Full_MC.s_3SD_P,]
+
+# Combine
+
+Full_Sep_s_3SD_PT = rbind(Full_FB_s_3SD_PT,Full_MC_s_3SD_PT)
+
+####################################################################################################
+
+# FULL_SEP_s_2SD_PT ####
+
+# FB part
+
+Full_FB_s_2SD.participants = ddply(Full_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_s_2SD.participants$isoutlier = rep(NA,length(Full_FB_s_2SD.participants$Participant))
+
+m.Full_FB_s_2SD.participants = mean(Full_FB_s_2SD.participants$meanBias)
+sd.Full_FB_s_2SD.participants = sd(Full_FB_s_2SD.participants$meanBias)
+
+hi.Full_FB_s_2SD.participants = m.Full_FB_s_2SD.participants + 2 * sd.Full_FB_s_2SD.participants
+lo.Full_FB_s_2SD.participants = m.Full_FB_s_2SD.participants - 2 * sd.Full_FB_s_2SD.participants
+
+for (i in 1:length(Full_FB_s_2SD.participants$meanBias)){
+  if (Full_FB_s_2SD.participants$meanBias[i] < hi.Full_FB_s_2SD.participants & Full_FB_s_2SD.participants$meanBias[i] > lo.Full_FB_s_2SD.participants){
+    Full_FB_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normally distributed, so s_2SD approach is preferable for FB
+ad.test(Full_FB_s_2SD.participants$meanBias)
+
+    # Dataset specification
+Full_FB_s_2SD_P = Full_FB
+
+Full_FB_s_2SD_P$isgroupoutlier = rep(NA,length(Full_FB_s_2SD_P$Participant))
+Group_outliers = Full_FB_s_2SD.participants$Participant[Full_FB_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_s_2SD_P$Participant)){
+  if (!is.na(match(Full_FB_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Full_FB_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_s_2SD_P = Full_FB_s_2SD_P[Full_FB_s_2SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_FB_s_2SD_P = mean(Full_FB_s_2SD_P$Bias)
+sd.Full_FB_s_2SD_P = sd(Full_FB_s_2SD_P$Bias)
+
+hi.Full_FB.s_2SD_P = m.Full_FB_s_2SD_P + 2 * sd.Full_FB_s_2SD_P
+lo.Full_FB.s_2SD_P = m.Full_FB_s_2SD_P - 2 * sd.Full_FB_s_2SD_P
+
+Full_FB_s_2SD_PT = Full_FB_s_2SD_P[Full_FB_s_2SD_P$Bias < hi.Full_FB.s_2SD_P,]
+Full_FB_s_2SD_PT = Full_FB_s_2SD_PT[Full_FB_s_2SD_PT$Bias > lo.Full_FB.s_2SD_P,]
+
+# MC part
+
+Full_MC_s_2SD.participants = ddply(Full_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_s_2SD.participants$isoutlier = rep(NA,length(Full_MC_s_2SD.participants$Participant))
+
+m.Full_MC_s_2SD.participants = mean(Full_MC_s_2SD.participants$meanBias)
+sd.Full_MC_s_2SD.participants = sd(Full_MC_s_2SD.participants$meanBias)
+
+hi.Full_MC_s_2SD.participants = m.Full_MC_s_2SD.participants + 2 * sd.Full_MC_s_2SD.participants
+lo.Full_MC_s_2SD.participants = m.Full_MC_s_2SD.participants - 2 * sd.Full_MC_s_2SD.participants
+
+for (i in 1:length(Full_MC_s_2SD.participants$meanBias)){
+  if (Full_MC_s_2SD.participants$meanBias[i] < hi.Full_MC_s_2SD.participants & Full_MC_s_2SD.participants$meanBias[i] > lo.Full_MC_s_2SD.participants){
+    Full_MC_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normally distributed, so s_2SD approach is preferable for MC as well
+ad.test(Full_MC_s_2SD.participants$meanBias)
+
+    # Dataset specification
+Full_MC_s_2SD_P = Full_MC
+
+Full_MC_s_2SD_P$isgroupoutlier = rep(NA,length(Full_MC_s_2SD_P$Participant))
+Group_outliers = Full_MC_s_2SD.participants$Participant[Full_MC_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_s_2SD_P$Participant)){
+  if (!is.na(match(Full_MC_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Full_MC_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_s_2SD_P = Full_MC_s_2SD_P[Full_MC_s_2SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Full_MC_s_2SD_P = mean(Full_MC_s_2SD_P$Bias)
+sd.Full_MC_s_2SD_P = sd(Full_MC_s_2SD_P$Bias)
+
+hi.Full_MC.s_2SD_P = m.Full_MC_s_2SD_P + 2 * sd.Full_MC_s_2SD_P
+lo.Full_MC.s_2SD_P = m.Full_MC_s_2SD_P - 2 * sd.Full_MC_s_2SD_P
+
+Full_MC_s_2SD_PT = Full_MC_s_2SD_P[Full_MC_s_2SD_P$Bias < hi.Full_MC.s_2SD_P,]
+Full_MC_s_2SD_PT = Full_MC_s_2SD_PT[Full_MC_s_2SD_PT$Bias > lo.Full_MC.s_2SD_P,]
+
+# Combine
+
+Full_Sep_s_2SD_PT = rbind(Full_FB_s_2SD_PT,Full_MC_s_2SD_PT)
+
+####################################################################################################
+
+# FULL_SEP_p_3SD_PT ####
+
+# FB part
+
+# Remove outlier participants
+
+Full_FB_p_3SD.participants = ddply(Full_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_p_3SD.participants$isoutlier = rep(NA,length(Full_FB_p_3SD.participants$Participant))
+
+m.Full_FB_p_3SD.participants = mean(Full_FB_p_3SD.participants$meanBias)
+
+
+Full_FB.SDs = ddply(Full_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB.participants = sqrt(sum(Full_FB_T.SDs$sdBias_squared)/length(Full_FB_T.SDs$Participant))
+
+hi.Full_FB_p_3SD.participants = m.Full_FB_p_3SD.participants + 3 * psd.Full_FB.participants
+lo.Full_FB_p_3SD.participants = m.Full_FB_p_3SD.participants - 3 * psd.Full_FB.participants
+
+for (i in 1:length(Full_FB_p_3SD.participants$meanBias)){
+  if (Full_FB_p_3SD.participants$meanBias[i] < hi.Full_FB_p_3SD.participants & Full_FB_p_3SD.participants$meanBias[i] > lo.Full_FB_p_3SD.participants){
+    Full_FB_p_3SD.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_p_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_p_3SD = Full_FB
+
+Full_FB_p_3SD$isgroupoutlier = rep(NA,length(Full_FB_p_3SD$Participant))
+Group_outliers = Full_FB_p_3SD.participants$Participant[Full_FB_p_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_p_3SD$Participant)){
+  if (!is.na(match(Full_FB_p_3SD$Participant[i],Group_outliers)))
+  {
+    Full_FB_p_3SD$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_p_3SD$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_p_3SD_P = Full_FB_p_3SD[Full_FB_p_3SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Full_FB_p_3SD_P = mean(Full_FB_p_3SD_P$Bias)
+Full_FB_p_3SD_P.SDs = ddply(Full_FB_p_3SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB_p_3SD_P = sqrt(sum(Full_FB_p_3SD_P.SDs$sdBias_squared)/length(Full_FB_p_3SD_P.SDs$Participant))
+
+hi.Full_FB_p_3SD_P.3SD = m.Full_FB_p_3SD_P + 3 * psd.Full_FB_p_3SD_P
+lo.Full_FB_p_3SD_P.3SD = m.Full_FB_p_3SD_P - 3 * psd.Full_FB_p_3SD_P
+
+Full_FB_p_3SD_TP = Full_FB_p_3SD_P[Full_FB_p_3SD_P$Bias < hi.Full_FB_p_3SD_P.3SD,]
+Full_FB_p_3SD_TP = Full_FB_p_3SD_TP[Full_FB_p_3SD_TP$Bias > lo.Full_FB_p_3SD_P.3SD,]
+
+# MC part
+
+
+# Remove outlier participants
+
+Full_MC_p_3SD.participants = ddply(Full_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_p_3SD.participants$isoutlier = rep(NA,length(Full_MC_p_3SD.participants$Participant))
+
+m.Full_MC_p_3SD.participants = mean(Full_MC_p_3SD.participants$meanBias)
+
+
+Full_MC.SDs = ddply(Full_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC.participants = sqrt(sum(Full_MC_T.SDs$sdBias_squared)/length(Full_MC_T.SDs$Participant))
+
+hi.Full_MC_p_3SD.participants = m.Full_MC_p_3SD.participants + 3 * psd.Full_MC.participants
+lo.Full_MC_p_3SD.participants = m.Full_MC_p_3SD.participants - 3 * psd.Full_MC.participants
+
+for (i in 1:length(Full_MC_p_3SD.participants$meanBias)){
+  if (Full_MC_p_3SD.participants$meanBias[i] < hi.Full_MC_p_3SD.participants & Full_MC_p_3SD.participants$meanBias[i] > lo.Full_MC_p_3SD.participants){
+    Full_MC_p_3SD.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_p_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_p_3SD = Full_MC
+
+Full_MC_p_3SD$isgroupoutlier = rep(NA,length(Full_MC_p_3SD$Participant))
+Group_outliers = Full_MC_p_3SD.participants$Participant[Full_MC_p_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_p_3SD$Participant)){
+  if (!is.na(match(Full_MC_p_3SD$Participant[i],Group_outliers)))
+  {
+    Full_MC_p_3SD$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_p_3SD$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_p_3SD_P = Full_MC_p_3SD[Full_MC_p_3SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Full_MC_p_3SD_P = mean(Full_MC_p_3SD_P$Bias)
+Full_MC_p_3SD_P.SDs = ddply(Full_MC_p_3SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC_p_3SD_P = sqrt(sum(Full_MC_p_3SD_P.SDs$sdBias_squared)/length(Full_MC_p_3SD_P.SDs$Participant))
+
+hi.Full_MC_p_3SD_P.3SD = m.Full_MC_p_3SD_P + 3 * psd.Full_MC_p_3SD_P
+lo.Full_MC_p_3SD_P.3SD = m.Full_MC_p_3SD_P - 3 * psd.Full_MC_p_3SD_P
+
+Full_MC_p_3SD_TP = Full_MC_p_3SD_P[Full_MC_p_3SD_P$Bias < hi.Full_MC_p_3SD_P.3SD,]
+Full_MC_p_3SD_TP = Full_MC_p_3SD_TP[Full_MC_p_3SD_TP$Bias > lo.Full_MC_p_3SD_P.3SD,]
+
+####################################################################################################
+
+# FULL_SEP_p_2SD_PT ####
+
+
+# FB part
+
+# Remove outlier participants
+
+Full_FB_p_2SD.participants = ddply(Full_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_FB_p_2SD.participants$isoutlier = rep(NA,length(Full_FB_p_2SD.participants$Participant))
+
+m.Full_FB_p_2SD.participants = mean(Full_FB_p_2SD.participants$meanBias)
+
+
+Full_FB.SDs = ddply(Full_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB.participants = sqrt(sum(Full_FB_T.SDs$sdBias_squared)/length(Full_FB_T.SDs$Participant))
+
+hi.Full_FB_p_2SD.participants = m.Full_FB_p_2SD.participants + 2 * psd.Full_FB.participants
+lo.Full_FB_p_2SD.participants = m.Full_FB_p_2SD.participants - 2 * psd.Full_FB.participants
+
+for (i in 1:length(Full_FB_p_2SD.participants$meanBias)){
+  if (Full_FB_p_2SD.participants$meanBias[i] < hi.Full_FB_p_2SD.participants & Full_FB_p_2SD.participants$meanBias[i] > lo.Full_FB_p_2SD.participants){
+    Full_FB_p_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_FB_p_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_FB_p_2SD = Full_FB
+
+Full_FB_p_2SD$isgroupoutlier = rep(NA,length(Full_FB_p_2SD$Participant))
+Group_outliers = Full_FB_p_2SD.participants$Participant[Full_FB_p_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_FB_p_2SD$Participant)){
+  if (!is.na(match(Full_FB_p_2SD$Participant[i],Group_outliers)))
+  {
+    Full_FB_p_2SD$isgroupoutlier[i] = 1
+  } else {
+    Full_FB_p_2SD$isgroupoutlier[i] = 0
+  }
+}
+
+Full_FB_p_2SD_P = Full_FB_p_2SD[Full_FB_p_2SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Full_FB_p_2SD_P = mean(Full_FB_p_2SD_P$Bias)
+Full_FB_p_2SD_P.SDs = ddply(Full_FB_p_2SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_FB_p_2SD_P = sqrt(sum(Full_FB_p_2SD_P.SDs$sdBias_squared)/length(Full_FB_p_2SD_P.SDs$Participant))
+
+hi.Full_FB_p_2SD_P.2SD = m.Full_FB_p_2SD_P + 2 * psd.Full_FB_p_2SD_P
+lo.Full_FB_p_2SD_P.2SD = m.Full_FB_p_2SD_P - 2 * psd.Full_FB_p_2SD_P
+
+Full_FB_p_2SD_TP = Full_FB_p_2SD_P[Full_FB_p_2SD_P$Bias < hi.Full_FB_p_2SD_P.2SD,]
+Full_FB_p_2SD_TP = Full_FB_p_2SD_TP[Full_FB_p_2SD_TP$Bias > lo.Full_FB_p_2SD_P.2SD,]
+
+# MC part
+
+
+# Remove outlier participants
+
+Full_MC_p_2SD.participants = ddply(Full_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_MC_p_2SD.participants$isoutlier = rep(NA,length(Full_MC_p_2SD.participants$Participant))
+
+m.Full_MC_p_2SD.participants = mean(Full_MC_p_2SD.participants$meanBias)
+
+
+Full_MC.SDs = ddply(Full_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC.participants = sqrt(sum(Full_MC_T.SDs$sdBias_squared)/length(Full_MC_T.SDs$Participant))
+
+hi.Full_MC_p_2SD.participants = m.Full_MC_p_2SD.participants + 2 * psd.Full_MC.participants
+lo.Full_MC_p_2SD.participants = m.Full_MC_p_2SD.participants - 2 * psd.Full_MC.participants
+
+for (i in 1:length(Full_MC_p_2SD.participants$meanBias)){
+  if (Full_MC_p_2SD.participants$meanBias[i] < hi.Full_MC_p_2SD.participants & Full_MC_p_2SD.participants$meanBias[i] > lo.Full_MC_p_2SD.participants){
+    Full_MC_p_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_MC_p_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_MC_p_2SD = Full_MC
+
+Full_MC_p_2SD$isgroupoutlier = rep(NA,length(Full_MC_p_2SD$Participant))
+Group_outliers = Full_MC_p_2SD.participants$Participant[Full_MC_p_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_MC_p_2SD$Participant)){
+  if (!is.na(match(Full_MC_p_2SD$Participant[i],Group_outliers)))
+  {
+    Full_MC_p_2SD$isgroupoutlier[i] = 1
+  } else {
+    Full_MC_p_2SD$isgroupoutlier[i] = 0
+  }
+}
+
+Full_MC_p_2SD_P = Full_MC_p_2SD[Full_MC_p_2SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Full_MC_p_2SD_P = mean(Full_MC_p_2SD_P$Bias)
+Full_MC_p_2SD_P.SDs = ddply(Full_MC_p_2SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Full_MC_p_2SD_P = sqrt(sum(Full_MC_p_2SD_P.SDs$sdBias_squared)/length(Full_MC_p_2SD_P.SDs$Participant))
+
+hi.Full_MC_p_2SD_P.2SD = m.Full_MC_p_2SD_P + 2 * psd.Full_MC_p_2SD_P
+lo.Full_MC_p_2SD_P.2SD = m.Full_MC_p_2SD_P - 2 * psd.Full_MC_p_2SD_P
+
+Full_MC_p_2SD_TP = Full_MC_p_2SD_P[Full_MC_p_2SD_P$Bias < hi.Full_MC_p_2SD_P.2SD,]
+Full_MC_p_2SD_TP = Full_MC_p_2SD_TP[Full_MC_p_2SD_TP$Bias > lo.Full_MC_p_2SD_P.2SD,]
+
+
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+####################################################################################################
+
+
+
+
+# PASS_ALL_s_3SD_TP ####
+
+
+    # Removal of outlier trials
+
+m.Pass_All = mean(Pass_All$Bias)
+sd.Pass_All = sd(Pass_All$Bias)
+
+hi.Pass_All.s_3SD = m.Pass_All + 3 * sd.Pass_All
+lo.Pass_All.s_3SD = m.Pass_All - 3 * sd.Pass_All
+
+Pass_All_s_3SD_T = Pass_All[Pass_All$Bias < hi.Pass_All.s_3SD,]
+Pass_All_s_3SD_T = Pass_All_s_3SD_T[Pass_All_s_3SD_T$Bias > lo.Pass_All.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Pass_All_s_3SD_T.participants = ddply(Pass_All_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_s_3SD_T.participants$isoutlier = rep(NA,length(Pass_All_s_3SD_T.participants$Participant))
+
+m.Pass_All_s_3SD_T.participants = mean(Pass_All_s_3SD_T.participants$meanBias)
+sd.Pass_All_s_3SD_T.participants = sd(Pass_All_s_3SD_T.participants$meanBias)
+
+hi.Pass_All_s_3SD_T.participants = m.Pass_All_s_3SD_T.participants + 3 * sd.Pass_All_s_3SD_T.participants
+lo.Pass_All_s_3SD_T.participants = m.Pass_All_s_3SD_T.participants - 3 * sd.Pass_All_s_3SD_T.participants
+
+for (i in 1:length(Pass_All_s_3SD_T.participants$meanBias)){
+  if (Pass_All_s_3SD_T.participants$meanBias[i] < hi.Pass_All_s_3SD_T.participants & Pass_All_s_3SD_T.participants$meanBias[i] > lo.Pass_All_s_3SD_T.participants){
+    Pass_All_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_s_3SD_T$isgroupoutlier = rep(NA,length(Pass_All_s_3SD_T$Participant))
+Group_outliers = Pass_All_s_3SD_T.participants$Participant[Pass_All_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_s_3SD_T$Participant)){
+  if (!is.na(match(Pass_All_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_s_3SD_TP = Pass_All_s_3SD_T[Pass_All_s_3SD_T$isgroupoutlier == 0,]
+
+
+
+
+####################################################################################################
+
+# PASS_ALL_s_2SD_TP ####
+
+
+# 2 SD cutoff because normality assumption is violated for Pass_All data set
+
+ad.test(Pass_All$Bias)
+
+    # Note: see end of section for information on normality of participant distribution
+
+hi.Pass_All.s_2SD = m.Pass_All + 2 * sd.Pass_All
+lo.Pass_All.s_2SD = m.Pass_All - 2 * sd.Pass_All
+
+Pass_All_s_2SD_T = Pass_All[Pass_All$Bias < hi.Pass_All.s_2SD,]
+Pass_All_s_2SD_T = Pass_All_s_2SD_T[Pass_All_s_2SD_T$Bias > lo.Pass_All.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Pass_All_s_2SD_T.participants = ddply(Pass_All_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_s_2SD_T.participants$isoutlier = rep(NA,length(Pass_All_s_2SD_T.participants$Participant))
+
+m.Pass_All_s_2SD_T.participants = mean(Pass_All_s_2SD_T.participants$meanBias)
+sd.Pass_All_s_2SD_T.participants = sd(Pass_All_s_2SD_T.participants$meanBias)
+
+hi.Pass_All_s_2SD_T.participants = m.Pass_All_s_2SD_T.participants + 2 * sd.Pass_All_s_2SD_T.participants
+lo.Pass_All_s_2SD_T.participants = m.Pass_All_s_2SD_T.participants - 2 * sd.Pass_All_s_2SD_T.participants
+
+for (i in 1:length(Pass_All_s_2SD_T.participants$meanBias)){
+  if (Pass_All_s_2SD_T.participants$meanBias[i] < hi.Pass_All_s_2SD_T.participants & Pass_All_s_2SD_T.participants$meanBias[i] > lo.Pass_All_s_2SD_T.participants){
+    Pass_All_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_s_2SD_T$isgroupoutlier = rep(NA,length(Pass_All_s_2SD_T$Participant))
+Group_outliers = Pass_All_s_2SD_T.participants$Participant[Pass_All_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_s_2SD_T$Participant)){
+  if (!is.na(match(Pass_All_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_s_2SD_TP = Pass_All_s_2SD_T[Pass_All_s_2SD_T$isgroupoutlier == 0,]
+
+
+  # Note: Participant mean bias distribution is normally distributed, so maybe a s_3SD approach on the participant level is
+  #       preferable.
+ad.test(Pass_All_s_2SD_T.participants$meanBias)
+    
+
+
+
+####################################################################################################
+
+# PASS_ALL_p_3SD_TP ####
+
+# Removal of outlier trials
+
+m.Pass_All = mean(Pass_All$Bias)
+Pass_All_p.SDs = ddply(Pass_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_All = sqrt(sum(Pass_All_p.SDs$sdBias_squared)/length(Pass_All_p.SDs$Participant))
+
+
+hi.Pass_All.p_3SD = m.Pass_All + 3 * psd.Pass_All
+lo.Pass_All.p_3SD = m.Pass_All - 3 * psd.Pass_All
+
+Pass_All_p_3SD_T = Pass_All[Pass_All$Bias < hi.Pass_All.p_3SD,]
+Pass_All_p_3SD_T = Pass_All_p_3SD_T[Pass_All_p_3SD_T$Bias > lo.Pass_All.p_3SD,]
+
+# Removal of outlier participants
+
+Pass_All_p_3SD_T.participants = ddply(Pass_All_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_p_3SD_T.participants$isoutlier = rep(NA,length(Pass_All_p_3SD_T.participants$Participant))
+
+m.Pass_All_p_3SD_T.participants = mean(Pass_All_p_3SD_T.participants$meanBias)
+
+Pass_All_p_3SD_T.SDs = ddply(Pass_All_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Pass_All_p_3SD_T = sqrt(sum(Pass_All_p_3SD_T.SDs$sdBias_squared)/length(Pass_All_p_3SD_T.SDs$Participant))
+
+hi_Pass_All.p_3SD_T = m.Pass_All_p_3SD_T.participants + 3 * psd.Pass_All_p_3SD_T
+lo_Pass_All.p_3SD_T = m.Pass_All_p_3SD_T.participants - 3 * psd.Pass_All_p_3SD_T
+
+for (i in 1:length(Pass_All_p_3SD_T.participants$meanBias)){
+  if (Pass_All_p_3SD_T.participants$meanBias[i] < hi_Pass_All.p_3SD_T & Pass_All_p_3SD_T.participants$meanBias[i] > lo_Pass_All.p_3SD_T){
+    Pass_All_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_p_3SD_T$isgroupoutlier = rep(NA,length(Pass_All_p_3SD_T$Participant))
+Group_outliers = Pass_All_p_3SD_T.participants$Participant[Pass_All_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_p_3SD_T$Participant)){
+  if (!is.na(match(Pass_All_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_p_3SD_TP = Pass_All_p_3SD_T[Pass_All_p_3SD_T$isgroupoutlier == 0,]
+
+
+
+
+####################################################################################################
+
+# PASS_ALL_p_2SD_TP ####
+
+
+# Removal of outlier trials
+
+m.Pass_All = mean(Pass_All$Bias)
+Pass_All_p.SDs = ddply(Pass_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_All = sqrt(sum(Pass_All_p.SDs$sdBias_squared)/length(Pass_All_p.SDs$Participant))
+
+
+hi.Pass_All.p_2SD = m.Pass_All + 2 * psd.Pass_All
+lo.Pass_All.p_2SD = m.Pass_All - 2 * psd.Pass_All
+
+Pass_All_p_2SD_T = Pass_All[Pass_All$Bias < hi.Pass_All.p_2SD,]
+Pass_All_p_2SD_T = Pass_All_p_2SD_T[Pass_All_p_2SD_T$Bias > lo.Pass_All.p_2SD,]
+
+# Removal of outlier participants
+
+Pass_All_p_2SD_T.participants = ddply(Pass_All_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_p_2SD_T.participants$isoutlier = rep(NA,length(Pass_All_p_2SD_T.participants$Participant))
+
+m.Pass_All_p_2SD_T.participants = mean(Pass_All_p_2SD_T.participants$meanBias)
+
+Pass_All_p_2SD_T.SDs = ddply(Pass_All_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Pass_All_p_2SD_T = sqrt(sum(Pass_All_p_2SD_T.SDs$sdBias_squared)/length(Pass_All_p_2SD_T.SDs$Participant))
+
+hi_Pass_All.p_2SD_T = m.Pass_All_p_2SD_T.participants + 2 * psd.Pass_All_p_2SD_T
+lo_Pass_All.p_2SD_T = m.Pass_All_p_2SD_T.participants - 2 * psd.Pass_All_p_2SD_T
+
+for (i in 1:length(Pass_All_p_2SD_T.participants$meanBias)){
+  if (Pass_All_p_2SD_T.participants$meanBias[i] < hi_Pass_All.p_2SD_T & Pass_All_p_2SD_T.participants$meanBias[i] > lo_Pass_All.p_2SD_T){
+    Pass_All_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_p_2SD_T$isgroupoutlier = rep(NA,length(Pass_All_p_2SD_T$Participant))
+Group_outliers = Pass_All_p_2SD_T.participants$Participant[Pass_All_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_p_2SD_T$Participant)){
+  if (!is.na(match(Pass_All_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_p_2SD_TP = Pass_All_p_2SD_T[Pass_All_p_2SD_T$isgroupoutlier == 0,]
+
+####################################################################################################
+
+
+# PASS_ALL_s_3SD_PT ####
+
+
+    # Removal of outlier participants
+
+Pass_All_s_3SD.participants = ddply(Pass_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_s_3SD.participants$isoutlier = rep(NA,length(Pass_All_s_3SD.participants$Participant))
+
+m.Pass_All_s_3SD.participants = mean(Pass_All_s_3SD.participants$meanBias)
+sd.Pass_All_s_3SD.participants = sd(Pass_All_s_3SD.participants$meanBias)
+
+hi.Pass_All_s_3SD.participants = m.Pass_All_s_3SD.participants + 3 * sd.Pass_All_s_3SD.participants
+lo.Pass_All_s_3SD.participants = m.Pass_All_s_3SD.participants - 3 * sd.Pass_All_s_3SD.participants
+
+for (i in 1:length(Pass_All_s_3SD.participants$meanBias)){
+  if (Pass_All_s_3SD.participants$meanBias[i] < hi.Pass_All_s_3SD.participants & Pass_All_s_3SD.participants$meanBias[i] > lo.Pass_All_s_3SD.participants){
+    Pass_All_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_s_3SD_P = Pass_All
+
+Pass_All_s_3SD_P$isgroupoutlier = rep(NA,length(Pass_All_s_3SD_P$Participant))
+Group_outliers = Pass_All_s_3SD.participants$Participant[Pass_All_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_s_3SD_P$Participant)){
+  if (!is.na(match(Pass_All_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Pass_All_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_s_3SD_P = Pass_All_s_3SD_P[Pass_All_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_All_s_3SD_P = mean(Pass_All_s_3SD_P$Bias)
+sd.Pass_All_s_3SD_P = sd(Pass_All_s_3SD_P$Bias)
+
+hi.Pass_All.s_3SD_P = m.Pass_All_s_3SD_P + 3 * sd.Pass_All_s_3SD_P
+lo.Pass_All.s_3SD_P = m.Pass_All_s_3SD_P - 3 * sd.Pass_All_s_3SD_P
+
+Pass_All_s_3SD_PT = Pass_All_s_3SD_P[Pass_All_s_3SD_P$Bias < hi.Pass_All.s_3SD_P,]
+Pass_All_s_3SD_PT = Pass_All_s_3SD_PT[Pass_All_s_3SD_PT$Bias > lo.Pass_All.s_3SD_P,]
+
+
+####################################################################################################
+
+# PASS_ALL_s_2SD_PT ####
+
+# 2 SD cutoff because normality assumption is violated for Pass_All data set
+
+ad.test(Pass_All$Bias)
+
+Full_All_s_2SD.participants = ddply(Full_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Full_All_s_2SD.participants$isoutlier = rep(NA,length(Full_All_s_2SD.participants$Participant))
+
+m.Full_All_s_2SD.participants = mean(Full_All_s_2SD.participants$meanBias)
+sd.Full_All_s_2SD.participants = sd(Full_All_s_2SD.participants$meanBias)
+
+hi.Full_All_s_2SD.participants = m.Full_All_s_2SD.participants + 2 * sd.Full_All_s_2SD.participants
+lo.Full_All_s_2SD.participants = m.Full_All_s_2SD.participants - 2 * sd.Full_All_s_2SD.participants
+
+for (i in 1:length(Full_All_s_2SD.participants$meanBias)){
+  if (Full_All_s_2SD.participants$meanBias[i] < hi.Full_All_s_2SD.participants & Full_All_s_2SD.participants$meanBias[i] > lo.Full_All_s_2SD.participants){
+    Full_All_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Full_All_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_s_2SD_P = Full_All
+
+Full_All_s_2SD_P$isgroupoutlier = rep(NA,length(Full_All_s_2SD_P$Participant))
+Group_outliers = Full_All_s_2SD.participants$Participant[Full_All_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Full_All_s_2SD_P$Participant)){
+  if (!is.na(match(Full_All_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Full_All_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Full_All_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Full_All_s_2SD_P = Full_All_s_2SD_P[Full_All_s_2SD_P$isgroupoutlier == 0,]
+
+  # Note: Participant mean bias is not normally distributed, so s_2SD approach is preferable.
+ad.test(Full_All_s_2SD.participants$meanBias)
+
+# Removal of outlier trials
+
+m.Full_All_s_2SD_P = mean(Full_All_s_2SD_P$Bias)
+sd.Full_All_s_2SD_P = sd(Full_All_s_2SD_P$Bias)
+
+hi.Full_All.s_2SD_P = m.Full_All_s_2SD_P + 2 * sd.Full_All_s_2SD_P
+lo.Full_All.s_2SD_P = m.Full_All_s_2SD_P - 2 * sd.Full_All_s_2SD_P
+
+Full_All_s_2SD_PT = Full_All_s_2SD_P[Full_All_s_2SD_P$Bias < hi.Full_All.s_2SD_P,]
+Full_All_s_2SD_PT = Full_All_s_2SD_PT[Full_All_s_2SD_PT$Bias > lo.Full_All.s_2SD_P,]
+
+####################################################################################################
+
+# PASS_ALL_p_3SD_PT ####
+
+
+# Removal of outlier participants
+
+
+
+Pass_All_p_3SD_P.participants = ddply(Pass_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_p_3SD_P.participants$isoutlier = rep(NA,length(Pass_All_p_3SD_P.participants$Participant))
+
+m.Pass_All_p_3SD_P.participants = mean(Pass_All_p_3SD_P.participants$meanBias)
+
+Pass_All_p_3SD_P.SDs = ddply(Pass_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Pass_All_p_3SD_P = sqrt(sum(Pass_All_p_3SD_P.SDs$sdBias_squared)/length(Pass_All_p_3SD_P.SDs$Participant))
+
+hi_Pass_All.p_3SD_P = m.Pass_All_p_3SD_P.participants + 3 * psd.Pass_All_p_3SD_P
+lo_Pass_All.p_3SD_P = m.Pass_All_p_3SD_P.participants - 3 * psd.Pass_All_p_3SD_P
+
+for (i in 1:length(Pass_All_p_3SD_P.participants$meanBias)){
+  if (Pass_All_p_3SD_P.participants$meanBias[i] < hi_Pass_All.p_3SD_P & Pass_All_p_3SD_P.participants$meanBias[i] > lo_Pass_All.p_3SD_P){
+    Pass_All_p_3SD_P.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_p_3SD_P.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_p_3SD_T = Pass_All
+Pass_All_p_3SD_T$isgroupoutlier = rep(NA,length(Pass_All_p_3SD_T$Participant))
+Group_outliers = Pass_All_p_3SD_T.participants$Participant[Pass_All_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_p_3SD_T$Participant)){
+  if (!is.na(match(Pass_All_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_p_3SD_TP = Pass_All_p_3SD_T[Pass_All_p_3SD_T$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_All_p_3SD_TP = mean(Pass_All_p_3SD_TP$Bias)
+Pass_All_p_3SD_TP_p.SDs = ddply(Pass_All_p_3SD_TP, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_All_p_3SD_TP = sqrt(sum(Pass_All_p_3SD_TP_p.SDs$sdBias_squared)/length(Pass_All_p_3SD_TP_p.SDs$Participant))
+
+
+hi.Pass_All_p_3SD_TP.p_3SD = m.Pass_All_p_3SD_TP + 3 * psd.Pass_All_p_3SD_TP
+lo.Pass_All_p_3SD_TP.p_3SD = m.Pass_All_p_3SD_TP - 3 * psd.Pass_All_p_3SD_TP
+
+Pass_All_p_3SD_TP_p_3SD_T = Pass_All_p_3SD_TP[Pass_All_p_3SD_TP$Bias < hi.Pass_All_p_3SD_TP.p_3SD,]
+Pass_All_p_3SD_TP_p_3SD_T = Pass_All_p_3SD_TP_p_3SD_T[Pass_All_p_3SD_TP_p_3SD_T$Bias > lo.Pass_All_p_3SD_TP.p_3SD,]
+
+####################################################################################################
+
+# PASS_ALL_p_2SD_PT ####
+
+
+
+Pass_All_p_2SD_P.participants = ddply(Pass_All, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_All_p_2SD_P.participants$isoutlier = rep(NA,length(Pass_All_p_2SD_P.participants$Participant))
+
+m.Pass_All_p_2SD_P.participants = mean(Pass_All_p_2SD_P.participants$meanBias)
+
+Pass_All_p_2SD_P.SDs = ddply(Pass_All, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+
+psd.Pass_All_p_2SD_P = sqrt(sum(Pass_All_p_2SD_P.SDs$sdBias_squared)/length(Pass_All_p_2SD_P.SDs$Participant))
+
+hi_Pass_All.p_2SD_P = m.Pass_All_p_2SD_P.participants + 2 * psd.Pass_All_p_2SD_P
+lo_Pass_All.p_2SD_P = m.Pass_All_p_2SD_P.participants - 2 * psd.Pass_All_p_2SD_P
+
+for (i in 1:length(Pass_All_p_2SD_P.participants$meanBias)){
+  if (Pass_All_p_2SD_P.participants$meanBias[i] < hi_Pass_All.p_2SD_P & Pass_All_p_2SD_P.participants$meanBias[i] > lo_Pass_All.p_2SD_P){
+    Pass_All_p_2SD_P.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_p_2SD_P.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_p_2SD_T = Pass_All
+Pass_All_p_2SD_T$isgroupoutlier = rep(NA,length(Pass_All_p_2SD_T$Participant))
+Group_outliers = Pass_All_p_2SD_T.participants$Participant[Pass_All_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_All_p_2SD_T$Participant)){
+  if (!is.na(match(Pass_All_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_All_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_All_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_All_p_2SD_TP = Pass_All_p_2SD_T[Pass_All_p_2SD_T$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_All_p_2SD_TP = mean(Pass_All_p_2SD_TP$Bias)
+Pass_All_p_2SD_TP_p.SDs = ddply(Pass_All_p_2SD_TP, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_All_p_2SD_TP = sqrt(sum(Pass_All_p_2SD_TP_p.SDs$sdBias_squared)/length(Pass_All_p_2SD_TP_p.SDs$Participant))
+
+
+hi.Pass_All_p_2SD_TP.p_2SD = m.Pass_All_p_2SD_TP + 2 * psd.Pass_All_p_2SD_TP
+lo.Pass_All_p_2SD_TP.p_2SD = m.Pass_All_p_2SD_TP - 2 * psd.Pass_All_p_2SD_TP
+
+Pass_All_p_2SD_TP_p_2SD_T = Pass_All_p_2SD_TP[Pass_All_p_2SD_TP$Bias < hi.Pass_All_p_2SD_TP.p_2SD,]
+Pass_All_p_2SD_TP_p_2SD_T = Pass_All_p_2SD_TP_p_2SD_T[Pass_All_p_2SD_TP_p_2SD_T$Bias > lo.Pass_All_p_2SD_TP.p_2SD,]
+
+####################################################################################################
+
+
+# PASS_SEP_s_3SD_TP ####
+
+# FB part
+
+m.Pass_FB = mean(Pass_FB$Bias)
+sd.Pass_FB = sd(Pass_FB$Bias)
+
+hi.Pass_FB.s_3SD = m.Pass_FB + 3 * sd.Pass_FB
+lo.Pass_FB.s_3SD = m.Pass_FB - 3 * sd.Pass_FB
+
+Pass_FB_s_3SD_T = Pass_FB[Pass_FB$Bias < hi.Pass_FB.s_3SD,]
+Pass_FB_s_3SD_T = Pass_FB_s_3SD_T[Pass_FB_s_3SD_T$Bias > lo.Pass_FB.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Pass_FB_s_3SD_T.participants = ddply(Pass_FB_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_s_3SD_T.participants$isoutlier = rep(NA,length(Pass_FB_s_3SD_T.participants$Participant))
+
+m.Pass_FB_s_3SD_T.participants = mean(Pass_FB_s_3SD_T.participants$meanBias)
+sd.Pass_FB_s_3SD_T.participants = sd(Pass_FB_s_3SD_T.participants$meanBias)
+
+hi.Pass_FB_s_3SD_T.participants = m.Pass_FB_s_3SD_T.participants + 3 * sd.Pass_FB_s_3SD_T.participants
+lo.Pass_FB_s_3SD_T.participants = m.Pass_FB_s_3SD_T.participants - 3 * sd.Pass_FB_s_3SD_T.participants
+
+for (i in 1:length(Pass_FB_s_3SD_T.participants$meanBias)){
+  if (Pass_FB_s_3SD_T.participants$meanBias[i] < hi.Pass_FB_s_3SD_T.participants & Pass_FB_s_3SD_T.participants$meanBias[i] > lo.Pass_FB_s_3SD_T.participants){
+    Pass_FB_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_s_3SD_T$isgroupoutlier = rep(NA,length(Pass_FB_s_3SD_T$Participant))
+Group_outliers = Pass_FB_s_3SD_T.participants$Participant[Pass_FB_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_s_3SD_T$Participant)){
+  if (!is.na(match(Pass_FB_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_FB_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_s_3SD_TP = Pass_FB_s_3SD_T[Pass_FB_s_3SD_T$isgroupoutlier == 0,]
+
+# MC part
+
+m.Pass_MC = mean(Pass_MC$Bias)
+sd.Pass_MC = sd(Pass_MC$Bias)
+
+hi.Pass_MC.s_3SD = m.Pass_MC + 3 * sd.Pass_MC
+lo.Pass_MC.s_3SD = m.Pass_MC - 3 * sd.Pass_MC
+
+Pass_MC_s_3SD_T = Pass_MC[Pass_MC$Bias < hi.Pass_MC.s_3SD,]
+Pass_MC_s_3SD_T = Pass_MC_s_3SD_T[Pass_MC_s_3SD_T$Bias > lo.Pass_MC.s_3SD,]
+
+
+    # Removal of outlier participants
+
+Pass_MC_s_3SD_T.participants = ddply(Pass_MC_s_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_s_3SD_T.participants$isoutlier = rep(NA,length(Pass_MC_s_3SD_T.participants$Participant))
+
+m.Pass_MC_s_3SD_T.participants = mean(Pass_MC_s_3SD_T.participants$meanBias)
+sd.Pass_MC_s_3SD_T.participants = sd(Pass_MC_s_3SD_T.participants$meanBias)
+
+hi.Pass_MC_s_3SD_T.participants = m.Pass_MC_s_3SD_T.participants + 3 * sd.Pass_MC_s_3SD_T.participants
+lo.Pass_MC_s_3SD_T.participants = m.Pass_MC_s_3SD_T.participants - 3 * sd.Pass_MC_s_3SD_T.participants
+
+for (i in 1:length(Pass_MC_s_3SD_T.participants$meanBias)){
+  if (Pass_MC_s_3SD_T.participants$meanBias[i] < hi.Pass_MC_s_3SD_T.participants & Pass_MC_s_3SD_T.participants$meanBias[i] > lo.Pass_MC_s_3SD_T.participants){
+    Pass_MC_s_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_s_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_s_3SD_T$isgroupoutlier = rep(NA,length(Pass_MC_s_3SD_T$Participant))
+Group_outliers = Pass_MC_s_3SD_T.participants$Participant[Pass_MC_s_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_s_3SD_T$Participant)){
+  if (!is.na(match(Pass_MC_s_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_MC_s_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_s_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_s_3SD_TP = Pass_MC_s_3SD_T[Pass_MC_s_3SD_T$isgroupoutlier == 0,]
+
+
+# Combine
+
+Pass_Sep_s_3SD_TP = rbind(Pass_FB_s_3SD_TP,Pass_MC_s_3SD_TP)
+
+####################################################################################################
+
+# PASS_SEP_s_2SD_TP ####
+
+
+# 2 SD approach because both parts are not normally distributed
+ad.test(Pass_FB$Bias)
+ad.test(Pass_MC$Bias)
+
+# FB part
+
+m.Pass_FB = mean(Pass_FB$Bias)
+sd.Pass_FB = sd(Pass_FB$Bias)
+
+hi.Pass_FB.s_2SD = m.Pass_FB + 2 * sd.Pass_FB
+lo.Pass_FB.s_2SD = m.Pass_FB - 2 * sd.Pass_FB
+
+Pass_FB_s_2SD_T = Pass_FB[Pass_FB$Bias < hi.Pass_FB.s_2SD,]
+Pass_FB_s_2SD_T = Pass_FB_s_2SD_T[Pass_FB_s_2SD_T$Bias > lo.Pass_FB.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Pass_FB_s_2SD_T.participants = ddply(Pass_FB_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_s_2SD_T.participants$isoutlier = rep(NA,length(Pass_FB_s_2SD_T.participants$Participant))
+
+m.Pass_FB_s_2SD_T.participants = mean(Pass_FB_s_2SD_T.participants$meanBias)
+sd.Pass_FB_s_2SD_T.participants = sd(Pass_FB_s_2SD_T.participants$meanBias)
+
+hi.Pass_FB_s_2SD_T.participants = m.Pass_FB_s_2SD_T.participants + 2 * sd.Pass_FB_s_2SD_T.participants
+lo.Pass_FB_s_2SD_T.participants = m.Pass_FB_s_2SD_T.participants - 2 * sd.Pass_FB_s_2SD_T.participants
+
+for (i in 1:length(Pass_FB_s_2SD_T.participants$meanBias)){
+  if (Pass_FB_s_2SD_T.participants$meanBias[i] < hi.Pass_FB_s_2SD_T.participants & Pass_FB_s_2SD_T.participants$meanBias[i] > lo.Pass_FB_s_2SD_T.participants){
+    Pass_FB_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution normally distributed, so maybe s_3SD approach is preferable for participants
+ad.test(Pass_FB_s_2SD_T.participants$meanBias)
+
+    # Dataset specification
+Pass_FB_s_2SD_T$isgroupoutlier = rep(NA,length(Pass_FB_s_2SD_T$Participant))
+Group_outliers = Pass_FB_s_2SD_T.participants$Participant[Pass_FB_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_s_2SD_T$Participant)){
+  if (!is.na(match(Pass_FB_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_FB_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_s_2SD_TP = Pass_FB_s_2SD_T[Pass_FB_s_2SD_T$isgroupoutlier == 0,]
+
+# MC part
+
+m.Pass_MC = mean(Pass_MC$Bias)
+sd.Pass_MC = sd(Pass_MC$Bias)
+
+hi.Pass_MC.s_2SD = m.Pass_MC + 2 * sd.Pass_MC
+lo.Pass_MC.s_2SD = m.Pass_MC - 2 * sd.Pass_MC
+
+Pass_MC_s_2SD_T = Pass_MC[Pass_MC$Bias < hi.Pass_MC.s_2SD,]
+Pass_MC_s_2SD_T = Pass_MC_s_2SD_T[Pass_MC_s_2SD_T$Bias > lo.Pass_MC.s_2SD,]
+
+
+    # Removal of outlier participants
+
+Pass_MC_s_2SD_T.participants = ddply(Pass_MC_s_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_s_2SD_T.participants$isoutlier = rep(NA,length(Pass_MC_s_2SD_T.participants$Participant))
+
+m.Pass_MC_s_2SD_T.participants = mean(Pass_MC_s_2SD_T.participants$meanBias)
+sd.Pass_MC_s_2SD_T.participants = sd(Pass_MC_s_2SD_T.participants$meanBias)
+
+hi.Pass_MC_s_2SD_T.participants = m.Pass_MC_s_2SD_T.participants + 2 * sd.Pass_MC_s_2SD_T.participants
+lo.Pass_MC_s_2SD_T.participants = m.Pass_MC_s_2SD_T.participants - 2 * sd.Pass_MC_s_2SD_T.participants
+
+for (i in 1:length(Pass_MC_s_2SD_T.participants$meanBias)){
+  if (Pass_MC_s_2SD_T.participants$meanBias[i] < hi.Pass_MC_s_2SD_T.participants & Pass_MC_s_2SD_T.participants$meanBias[i] > lo.Pass_MC_s_2SD_T.participants){
+    Pass_MC_s_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_s_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normally distributed, so s_3SD approach would be better)
+ad.test(Pass_MC_s_2SD_T.participants$meanBias)
+
+    # Dataset specification
+Pass_MC_s_2SD_T$isgroupoutlier = rep(NA,length(Pass_MC_s_2SD_T$Participant))
+Group_outliers = Pass_MC_s_2SD_T.participants$Participant[Pass_MC_s_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_s_2SD_T$Participant)){
+  if (!is.na(match(Pass_MC_s_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_MC_s_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_s_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_s_2SD_TP = Pass_MC_s_2SD_T[Pass_MC_s_2SD_T$isgroupoutlier == 0,]
+
+
+# Combine
+
+Pass_Sep_s_2SD_TP = rbind(Pass_FB_s_2SD_TP,Pass_MC_s_2SD_TP)
+
+####################################################################################################
+
+
+# PASS_SEP_p_3SD_TP ####
+
+# FB part 
+
+# Remove trial outliers
+
+m.Pass_FB = mean(Pass_FB$Bias)
+Pass_FB_p.SDs = ddply(Pass_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB = sqrt(sum(Pass_FB_p.SDs$sdBias_squared)/length(Pass_FB_p.SDs$Participant))
+
+hi.Pass_FB_p.3SD = m.Pass_FB + 3 * psd.Pass_FB
+lo.Pass_FB_p.3SD = m.Pass_FB - 3 * psd.Pass_FB
+
+Pass_FB_p_3SD_T = Pass_FB[Pass_FB$Bias < hi.Pass_FB_p.3SD,]
+Pass_FB_p_3SD_T = Pass_FB_p_3SD_T[Pass_FB_p_3SD_T$Bias > lo.Pass_FB_p.3SD,]
+
+
+
+
+# Remove outlier participants
+
+Pass_FB_p_3SD_T.participants = ddply(Pass_FB_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_p_3SD_T.participants$isoutlier = rep(NA,length(Pass_FB_p_3SD_T.participants$Participant))
+
+m.Pass_FB_p_3SD_T.participants = mean(Pass_FB_p_3SD_T.participants$meanBias)
+
+
+Pass_FB_T.SDs = ddply(Pass_FB_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB.participants = sqrt(sum(Pass_FB_T.SDs$sdBias_squared)/length(Pass_FB_T.SDs$Participant))
+
+hi.Pass_FB_p_3SD_T.participants = m.Pass_FB_p_3SD_T.participants + 3 * psd.Pass_FB.participants
+lo.Pass_FB_p_3SD_T.participants = m.Pass_FB_p_3SD_T.participants - 3 * psd.Pass_FB.participants
+
+for (i in 1:length(Pass_FB_p_3SD_T.participants$meanBias)){
+  if (Pass_FB_p_3SD_T.participants$meanBias[i] < hi.Pass_FB_p_3SD_T.participants & Pass_FB_p_3SD_T.participants$meanBias[i] > lo.Pass_FB_p_3SD_T.participants){
+    Pass_FB_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_p_3SD_T$isgroupoutlier = rep(NA,length(Pass_FB_p_3SD_T$Participant))
+Group_outliers = Pass_FB_p_3SD_T.participants$Participant[Pass_FB_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_p_3SD_T$Participant)){
+  if (!is.na(match(Pass_FB_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_FB_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_p_3SD_TP = Pass_FB_p_3SD_T[Pass_FB_p_3SD_T$isgroupoutlier == 0,]
+
+
+# MC part
+
+
+# Remove trial outliers
+
+m.Pass_MC = mean(Pass_MC$Bias)
+Pass_MC_p.SDs = ddply(Pass_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC = sqrt(sum(Pass_MC_p.SDs$sdBias_squared)/length(Pass_MC_p.SDs$Participant))
+
+hi.Pass_MC_p.3SD = m.Pass_MC + 3 * psd.Pass_MC
+lo.Pass_MC_p.3SD = m.Pass_MC - 3 * psd.Pass_MC
+
+Pass_MC_p_3SD_T = Pass_MC[Pass_MC$Bias < hi.Pass_MC_p.3SD,]
+Pass_MC_p_3SD_T = Pass_MC_p_3SD_T[Pass_MC_p_3SD_T$Bias > lo.Pass_MC_p.3SD,]
+
+
+
+
+# Remove outlier participants
+
+Pass_MC_p_3SD_T.participants = ddply(Pass_MC_p_3SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_p_3SD_T.participants$isoutlier = rep(NA,length(Pass_MC_p_3SD_T.participants$Participant))
+
+m.Pass_MC_p_3SD_T.participants = mean(Pass_MC_p_3SD_T.participants$meanBias)
+
+
+Pass_MC_T.SDs = ddply(Pass_MC_p_3SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC.participants = sqrt(sum(Pass_MC_T.SDs$sdBias_squared)/length(Pass_MC_T.SDs$Participant))
+
+hi.Pass_MC_p_3SD_T.participants = m.Pass_MC_p_3SD_T.participants + 3 * psd.Pass_MC.participants
+lo.Pass_MC_p_3SD_T.participants = m.Pass_MC_p_3SD_T.participants - 3 * psd.Pass_MC.participants
+
+for (i in 1:length(Pass_MC_p_3SD_T.participants$meanBias)){
+  if (Pass_MC_p_3SD_T.participants$meanBias[i] < hi.Pass_MC_p_3SD_T.participants & Pass_MC_p_3SD_T.participants$meanBias[i] > lo.Pass_MC_p_3SD_T.participants){
+    Pass_MC_p_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_p_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_p_3SD_T$isgroupoutlier = rep(NA,length(Pass_MC_p_3SD_T$Participant))
+Group_outliers = Pass_MC_p_3SD_T.participants$Participant[Pass_MC_p_3SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_p_3SD_T$Participant)){
+  if (!is.na(match(Pass_MC_p_3SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_MC_p_3SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_p_3SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_p_3SD_TP = Pass_MC_p_3SD_T[Pass_MC_p_3SD_T$isgroupoutlier == 0,]
+
+
+
+####################################################################################################
+
+# PASS_SEP_p_2SD_TP ####
+
+
+# FB part 
+
+# Remove trial outliers
+
+m.Pass_FB = mean(Pass_FB$Bias)
+Pass_FB_p.SDs = ddply(Pass_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB = sqrt(sum(Pass_FB_p.SDs$sdBias_squared)/length(Pass_FB_p.SDs$Participant))
+
+hi.Pass_FB_p.2SD = m.Pass_FB + 2 * psd.Pass_FB
+lo.Pass_FB_p.2SD = m.Pass_FB - 2 * psd.Pass_FB
+
+Pass_FB_p_2SD_T = Pass_FB[Pass_FB$Bias < hi.Pass_FB_p.2SD,]
+Pass_FB_p_2SD_T = Pass_FB_p_2SD_T[Pass_FB_p_2SD_T$Bias > lo.Pass_FB_p.2SD,]
+
+
+
+
+# Remove outlier participants
+
+Pass_FB_p_2SD_T.participants = ddply(Pass_FB_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_p_2SD_T.participants$isoutlier = rep(NA,length(Pass_FB_p_2SD_T.participants$Participant))
+
+m.Pass_FB_p_2SD_T.participants = mean(Pass_FB_p_2SD_T.participants$meanBias)
+
+
+Pass_FB_T.SDs = ddply(Pass_FB_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB.participants = sqrt(sum(Pass_FB_T.SDs$sdBias_squared)/length(Pass_FB_T.SDs$Participant))
+
+hi.Pass_FB_p_2SD_T.participants = m.Pass_FB_p_2SD_T.participants + 2 * psd.Pass_FB.participants
+lo.Pass_FB_p_2SD_T.participants = m.Pass_FB_p_2SD_T.participants - 2 * psd.Pass_FB.participants
+
+for (i in 1:length(Pass_FB_p_2SD_T.participants$meanBias)){
+  if (Pass_FB_p_2SD_T.participants$meanBias[i] < hi.Pass_FB_p_2SD_T.participants & Pass_FB_p_2SD_T.participants$meanBias[i] > lo.Pass_FB_p_2SD_T.participants){
+    Pass_FB_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_p_2SD_T$isgroupoutlier = rep(NA,length(Pass_FB_p_2SD_T$Participant))
+Group_outliers = Pass_FB_p_2SD_T.participants$Participant[Pass_FB_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_p_2SD_T$Participant)){
+  if (!is.na(match(Pass_FB_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_FB_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_p_2SD_TP = Pass_FB_p_2SD_T[Pass_FB_p_2SD_T$isgroupoutlier == 0,]
+
+
+# MC part
+
+
+# Remove trial outliers
+
+m.Pass_MC = mean(Pass_MC$Bias)
+Pass_MC_p.SDs = ddply(Pass_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC = sqrt(sum(Pass_MC_p.SDs$sdBias_squared)/length(Pass_MC_p.SDs$Participant))
+
+hi.Pass_MC_p.2SD = m.Pass_MC + 2 * psd.Pass_MC
+lo.Pass_MC_p.2SD = m.Pass_MC - 2 * psd.Pass_MC
+
+Pass_MC_p_2SD_T = Pass_MC[Pass_MC$Bias < hi.Pass_MC_p.2SD,]
+Pass_MC_p_2SD_T = Pass_MC_p_2SD_T[Pass_MC_p_2SD_T$Bias > lo.Pass_MC_p.2SD,]
+
+
+
+
+# Remove outlier participants
+
+Pass_MC_p_2SD_T.participants = ddply(Pass_MC_p_2SD_T, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_p_2SD_T.participants$isoutlier = rep(NA,length(Pass_MC_p_2SD_T.participants$Participant))
+
+m.Pass_MC_p_2SD_T.participants = mean(Pass_MC_p_2SD_T.participants$meanBias)
+
+
+Pass_MC_T.SDs = ddply(Pass_MC_p_2SD_T, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC.participants = sqrt(sum(Pass_MC_T.SDs$sdBias_squared)/length(Pass_MC_T.SDs$Participant))
+
+hi.Pass_MC_p_2SD_T.participants = m.Pass_MC_p_2SD_T.participants + 2 * psd.Pass_MC.participants
+lo.Pass_MC_p_2SD_T.participants = m.Pass_MC_p_2SD_T.participants - 2 * psd.Pass_MC.participants
+
+for (i in 1:length(Pass_MC_p_2SD_T.participants$meanBias)){
+  if (Pass_MC_p_2SD_T.participants$meanBias[i] < hi.Pass_MC_p_2SD_T.participants & Pass_MC_p_2SD_T.participants$meanBias[i] > lo.Pass_MC_p_2SD_T.participants){
+    Pass_MC_p_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_p_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_p_2SD_T$isgroupoutlier = rep(NA,length(Pass_MC_p_2SD_T$Participant))
+Group_outliers = Pass_MC_p_2SD_T.participants$Participant[Pass_MC_p_2SD_T.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_p_2SD_T$Participant)){
+  if (!is.na(match(Pass_MC_p_2SD_T$Participant[i],Group_outliers)))
+  {
+    Pass_MC_p_2SD_T$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_p_2SD_T$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_p_2SD_TP = Pass_MC_p_2SD_T[Pass_MC_p_2SD_T$isgroupoutlier == 0,]
+
+
+
+####################################################################################################
+
+
+# PASS_SEP_s_3SD_PT ####
+
+
+# FB part
+
+Pass_FB_s_3SD.participants = ddply(Pass_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_s_3SD.participants$isoutlier = rep(NA,length(Pass_FB_s_3SD.participants$Participant))
+
+m.Pass_FB_s_3SD.participants = mean(Pass_FB_s_3SD.participants$meanBias)
+sd.Pass_FB_s_3SD.participants = sd(Pass_FB_s_3SD.participants$meanBias)
+
+hi.Pass_FB_s_3SD.participants = m.Pass_FB_s_3SD.participants + 3 * sd.Pass_FB_s_3SD.participants
+lo.Pass_FB_s_3SD.participants = m.Pass_FB_s_3SD.participants - 3 * sd.Pass_FB_s_3SD.participants
+
+for (i in 1:length(Pass_FB_s_3SD.participants$meanBias)){
+  if (Pass_FB_s_3SD.participants$meanBias[i] < hi.Pass_FB_s_3SD.participants & Pass_FB_s_3SD.participants$meanBias[i] > lo.Pass_FB_s_3SD.participants){
+    Pass_FB_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_s_3SD_P = Pass_FB
+
+Pass_FB_s_3SD_P$isgroupoutlier = rep(NA,length(Pass_FB_s_3SD_P$Participant))
+Group_outliers = Pass_FB_s_3SD.participants$Participant[Pass_FB_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_s_3SD_P$Participant)){
+  if (!is.na(match(Pass_FB_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Pass_FB_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_s_3SD_P = Pass_FB_s_3SD_P[Pass_FB_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_FB_s_3SD_P = mean(Pass_FB_s_3SD_P$Bias)
+sd.Pass_FB_s_3SD_P = sd(Pass_FB_s_3SD_P$Bias)
+
+hi.Pass_FB.s_3SD_P = m.Pass_FB_s_3SD_P + 3 * sd.Pass_FB_s_3SD_P
+lo.Pass_FB.s_3SD_P = m.Pass_FB_s_3SD_P - 3 * sd.Pass_FB_s_3SD_P
+
+Pass_FB_s_3SD_PT = Pass_FB_s_3SD_P[Pass_FB_s_3SD_P$Bias < hi.Pass_FB.s_3SD_P,]
+Pass_FB_s_3SD_PT = Pass_FB_s_3SD_PT[Pass_FB_s_3SD_PT$Bias > lo.Pass_FB.s_3SD_P,]
+
+# MC part
+
+Pass_MC_s_3SD.participants = ddply(Pass_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_s_3SD.participants$isoutlier = rep(NA,length(Pass_MC_s_3SD.participants$Participant))
+
+m.Pass_MC_s_3SD.participants = mean(Pass_MC_s_3SD.participants$meanBias)
+sd.Pass_MC_s_3SD.participants = sd(Pass_MC_s_3SD.participants$meanBias)
+
+hi.Pass_MC_s_3SD.participants = m.Pass_MC_s_3SD.participants + 3 * sd.Pass_MC_s_3SD.participants
+lo.Pass_MC_s_3SD.participants = m.Pass_MC_s_3SD.participants - 3 * sd.Pass_MC_s_3SD.participants
+
+for (i in 1:length(Pass_MC_s_3SD.participants$meanBias)){
+  if (Pass_MC_s_3SD.participants$meanBias[i] < hi.Pass_MC_s_3SD.participants & Pass_MC_s_3SD.participants$meanBias[i] > lo.Pass_MC_s_3SD.participants){
+    Pass_MC_s_3SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_s_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_s_3SD_P = Pass_MC
+
+Pass_MC_s_3SD_P$isgroupoutlier = rep(NA,length(Pass_MC_s_3SD_P$Participant))
+Group_outliers = Pass_MC_s_3SD.participants$Participant[Pass_MC_s_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_s_3SD_P$Participant)){
+  if (!is.na(match(Pass_MC_s_3SD_P$Participant[i],Group_outliers)))
+  {
+    Pass_MC_s_3SD_P$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_s_3SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_s_3SD_P = Pass_MC_s_3SD_P[Pass_MC_s_3SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_MC_s_3SD_P = mean(Pass_MC_s_3SD_P$Bias)
+sd.Pass_MC_s_3SD_P = sd(Pass_MC_s_3SD_P$Bias)
+
+hi.Pass_MC.s_3SD_P = m.Pass_MC_s_3SD_P + 3 * sd.Pass_MC_s_3SD_P
+lo.Pass_MC.s_3SD_P = m.Pass_MC_s_3SD_P - 3 * sd.Pass_MC_s_3SD_P
+
+Pass_MC_s_3SD_PT = Pass_MC_s_3SD_P[Pass_MC_s_3SD_P$Bias < hi.Pass_MC.s_3SD_P,]
+Pass_MC_s_3SD_PT = Pass_MC_s_3SD_PT[Pass_MC_s_3SD_PT$Bias > lo.Pass_MC.s_3SD_P,]
+
+# Combine
+
+Pass_Sep_s_3SD_PT = rbind(Pass_FB_s_3SD_PT,Pass_MC_s_3SD_PT)
+
+####################################################################################################
+
+# PASS_SEP_s_2SD_PT ####
+
+# FB part
+
+Pass_FB_s_2SD.participants = ddply(Pass_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_s_2SD.participants$isoutlier = rep(NA,length(Pass_FB_s_2SD.participants$Participant))
+
+m.Pass_FB_s_2SD.participants = mean(Pass_FB_s_2SD.participants$meanBias)
+sd.Pass_FB_s_2SD.participants = sd(Pass_FB_s_2SD.participants$meanBias)
+
+hi.Pass_FB_s_2SD.participants = m.Pass_FB_s_2SD.participants + 2 * sd.Pass_FB_s_2SD.participants
+lo.Pass_FB_s_2SD.participants = m.Pass_FB_s_2SD.participants - 2 * sd.Pass_FB_s_2SD.participants
+
+for (i in 1:length(Pass_FB_s_2SD.participants$meanBias)){
+  if (Pass_FB_s_2SD.participants$meanBias[i] < hi.Pass_FB_s_2SD.participants & Pass_FB_s_2SD.participants$meanBias[i] > lo.Pass_FB_s_2SD.participants){
+    Pass_FB_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normally distributed, so s_2SD approach is preferable for FB
+ad.test(Pass_FB_s_2SD.participants$meanBias)
+
+    # Dataset specification
+Pass_FB_s_2SD_P = Pass_FB
+
+Pass_FB_s_2SD_P$isgroupoutlier = rep(NA,length(Pass_FB_s_2SD_P$Participant))
+Group_outliers = Pass_FB_s_2SD.participants$Participant[Pass_FB_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_s_2SD_P$Participant)){
+  if (!is.na(match(Pass_FB_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Pass_FB_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_s_2SD_P = Pass_FB_s_2SD_P[Pass_FB_s_2SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_FB_s_2SD_P = mean(Pass_FB_s_2SD_P$Bias)
+sd.Pass_FB_s_2SD_P = sd(Pass_FB_s_2SD_P$Bias)
+
+hi.Pass_FB.s_2SD_P = m.Pass_FB_s_2SD_P + 2 * sd.Pass_FB_s_2SD_P
+lo.Pass_FB.s_2SD_P = m.Pass_FB_s_2SD_P - 2 * sd.Pass_FB_s_2SD_P
+
+Pass_FB_s_2SD_PT = Pass_FB_s_2SD_P[Pass_FB_s_2SD_P$Bias < hi.Pass_FB.s_2SD_P,]
+Pass_FB_s_2SD_PT = Pass_FB_s_2SD_PT[Pass_FB_s_2SD_PT$Bias > lo.Pass_FB.s_2SD_P,]
+
+# MC part
+
+Pass_MC_s_2SD.participants = ddply(Pass_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_s_2SD.participants$isoutlier = rep(NA,length(Pass_MC_s_2SD.participants$Participant))
+
+m.Pass_MC_s_2SD.participants = mean(Pass_MC_s_2SD.participants$meanBias)
+sd.Pass_MC_s_2SD.participants = sd(Pass_MC_s_2SD.participants$meanBias)
+
+hi.Pass_MC_s_2SD.participants = m.Pass_MC_s_2SD.participants + 2 * sd.Pass_MC_s_2SD.participants
+lo.Pass_MC_s_2SD.participants = m.Pass_MC_s_2SD.participants - 2 * sd.Pass_MC_s_2SD.participants
+
+for (i in 1:length(Pass_MC_s_2SD.participants$meanBias)){
+  if (Pass_MC_s_2SD.participants$meanBias[i] < hi.Pass_MC_s_2SD.participants & Pass_MC_s_2SD.participants$meanBias[i] > lo.Pass_MC_s_2SD.participants){
+    Pass_MC_s_2SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_s_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+# Participant mean bias distribution is not normally distributed, so s_2SD approach is preferable for MC as well
+ad.test(Pass_MC_s_2SD.participants$meanBias)
+
+    # Dataset specification
+Pass_MC_s_2SD_P = Pass_MC
+
+Pass_MC_s_2SD_P$isgroupoutlier = rep(NA,length(Pass_MC_s_2SD_P$Participant))
+Group_outliers = Pass_MC_s_2SD.participants$Participant[Pass_MC_s_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_s_2SD_P$Participant)){
+  if (!is.na(match(Pass_MC_s_2SD_P$Participant[i],Group_outliers)))
+  {
+    Pass_MC_s_2SD_P$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_s_2SD_P$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_s_2SD_P = Pass_MC_s_2SD_P[Pass_MC_s_2SD_P$isgroupoutlier == 0,]
+
+
+# Removal of outlier trials
+
+m.Pass_MC_s_2SD_P = mean(Pass_MC_s_2SD_P$Bias)
+sd.Pass_MC_s_2SD_P = sd(Pass_MC_s_2SD_P$Bias)
+
+hi.Pass_MC.s_2SD_P = m.Pass_MC_s_2SD_P + 2 * sd.Pass_MC_s_2SD_P
+lo.Pass_MC.s_2SD_P = m.Pass_MC_s_2SD_P - 2 * sd.Pass_MC_s_2SD_P
+
+Pass_MC_s_2SD_PT = Pass_MC_s_2SD_P[Pass_MC_s_2SD_P$Bias < hi.Pass_MC.s_2SD_P,]
+Pass_MC_s_2SD_PT = Pass_MC_s_2SD_PT[Pass_MC_s_2SD_PT$Bias > lo.Pass_MC.s_2SD_P,]
+
+# Combine
+
+Pass_Sep_s_2SD_PT = rbind(Pass_FB_s_2SD_PT,Pass_MC_s_2SD_PT)
+
+####################################################################################################
+
+# PASS_SEP_p_3SD_PT ####
+
+# FB part
+
+# Remove outlier participants
+
+Pass_FB_p_3SD.participants = ddply(Pass_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_p_3SD.participants$isoutlier = rep(NA,length(Pass_FB_p_3SD.participants$Participant))
+
+m.Pass_FB_p_3SD.participants = mean(Pass_FB_p_3SD.participants$meanBias)
+
+
+Pass_FB.SDs = ddply(Pass_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB.participants = sqrt(sum(Pass_FB_T.SDs$sdBias_squared)/length(Pass_FB_T.SDs$Participant))
+
+hi.Pass_FB_p_3SD.participants = m.Pass_FB_p_3SD.participants + 3 * psd.Pass_FB.participants
+lo.Pass_FB_p_3SD.participants = m.Pass_FB_p_3SD.participants - 3 * psd.Pass_FB.participants
+
+for (i in 1:length(Pass_FB_p_3SD.participants$meanBias)){
+  if (Pass_FB_p_3SD.participants$meanBias[i] < hi.Pass_FB_p_3SD.participants & Pass_FB_p_3SD.participants$meanBias[i] > lo.Pass_FB_p_3SD.participants){
+    Pass_FB_p_3SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_p_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_p_3SD = Pass_FB
+
+Pass_FB_p_3SD$isgroupoutlier = rep(NA,length(Pass_FB_p_3SD$Participant))
+Group_outliers = Pass_FB_p_3SD.participants$Participant[Pass_FB_p_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_p_3SD$Participant)){
+  if (!is.na(match(Pass_FB_p_3SD$Participant[i],Group_outliers)))
+  {
+    Pass_FB_p_3SD$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_p_3SD$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_p_3SD_P = Pass_FB_p_3SD[Pass_FB_p_3SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Pass_FB_p_3SD_P = mean(Pass_FB_p_3SD_P$Bias)
+Pass_FB_p_3SD_P.SDs = ddply(Pass_FB_p_3SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB_p_3SD_P = sqrt(sum(Pass_FB_p_3SD_P.SDs$sdBias_squared)/length(Pass_FB_p_3SD_P.SDs$Participant))
+
+hi.Pass_FB_p_3SD_P.3SD = m.Pass_FB_p_3SD_P + 3 * psd.Pass_FB_p_3SD_P
+lo.Pass_FB_p_3SD_P.3SD = m.Pass_FB_p_3SD_P - 3 * psd.Pass_FB_p_3SD_P
+
+Pass_FB_p_3SD_TP = Pass_FB_p_3SD_P[Pass_FB_p_3SD_P$Bias < hi.Pass_FB_p_3SD_P.3SD,]
+Pass_FB_p_3SD_TP = Pass_FB_p_3SD_TP[Pass_FB_p_3SD_TP$Bias > lo.Pass_FB_p_3SD_P.3SD,]
+
+# MC part
+
+
+# Remove outlier participants
+
+Pass_MC_p_3SD.participants = ddply(Pass_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_p_3SD.participants$isoutlier = rep(NA,length(Pass_MC_p_3SD.participants$Participant))
+
+m.Pass_MC_p_3SD.participants = mean(Pass_MC_p_3SD.participants$meanBias)
+
+
+Pass_MC.SDs = ddply(Pass_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC.participants = sqrt(sum(Pass_MC_T.SDs$sdBias_squared)/length(Pass_MC_T.SDs$Participant))
+
+hi.Pass_MC_p_3SD.participants = m.Pass_MC_p_3SD.participants + 3 * psd.Pass_MC.participants
+lo.Pass_MC_p_3SD.participants = m.Pass_MC_p_3SD.participants - 3 * psd.Pass_MC.participants
+
+for (i in 1:length(Pass_MC_p_3SD.participants$meanBias)){
+  if (Pass_MC_p_3SD.participants$meanBias[i] < hi.Pass_MC_p_3SD.participants & Pass_MC_p_3SD.participants$meanBias[i] > lo.Pass_MC_p_3SD.participants){
+    Pass_MC_p_3SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_p_3SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_p_3SD = Pass_MC
+
+Pass_MC_p_3SD$isgroupoutlier = rep(NA,length(Pass_MC_p_3SD$Participant))
+Group_outliers = Pass_MC_p_3SD.participants$Participant[Pass_MC_p_3SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_p_3SD$Participant)){
+  if (!is.na(match(Pass_MC_p_3SD$Participant[i],Group_outliers)))
+  {
+    Pass_MC_p_3SD$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_p_3SD$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_p_3SD_P = Pass_MC_p_3SD[Pass_MC_p_3SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Pass_MC_p_3SD_P = mean(Pass_MC_p_3SD_P$Bias)
+Pass_MC_p_3SD_P.SDs = ddply(Pass_MC_p_3SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC_p_3SD_P = sqrt(sum(Pass_MC_p_3SD_P.SDs$sdBias_squared)/length(Pass_MC_p_3SD_P.SDs$Participant))
+
+hi.Pass_MC_p_3SD_P.3SD = m.Pass_MC_p_3SD_P + 3 * psd.Pass_MC_p_3SD_P
+lo.Pass_MC_p_3SD_P.3SD = m.Pass_MC_p_3SD_P - 3 * psd.Pass_MC_p_3SD_P
+
+Pass_MC_p_3SD_TP = Pass_MC_p_3SD_P[Pass_MC_p_3SD_P$Bias < hi.Pass_MC_p_3SD_P.3SD,]
+Pass_MC_p_3SD_TP = Pass_MC_p_3SD_TP[Pass_MC_p_3SD_TP$Bias > lo.Pass_MC_p_3SD_P.3SD,]
+
+####################################################################################################
+
+# PASS_SEP_p_2SD_PT ####
+
+
+# FB part
+
+# Remove outlier participants
+
+Pass_FB_p_2SD.participants = ddply(Pass_FB, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_FB_p_2SD.participants$isoutlier = rep(NA,length(Pass_FB_p_2SD.participants$Participant))
+
+m.Pass_FB_p_2SD.participants = mean(Pass_FB_p_2SD.participants$meanBias)
+
+
+Pass_FB.SDs = ddply(Pass_FB, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB.participants = sqrt(sum(Pass_FB_T.SDs$sdBias_squared)/length(Pass_FB_T.SDs$Participant))
+
+hi.Pass_FB_p_2SD.participants = m.Pass_FB_p_2SD.participants + 2 * psd.Pass_FB.participants
+lo.Pass_FB_p_2SD.participants = m.Pass_FB_p_2SD.participants - 2 * psd.Pass_FB.participants
+
+for (i in 1:length(Pass_FB_p_2SD.participants$meanBias)){
+  if (Pass_FB_p_2SD.participants$meanBias[i] < hi.Pass_FB_p_2SD.participants & Pass_FB_p_2SD.participants$meanBias[i] > lo.Pass_FB_p_2SD.participants){
+    Pass_FB_p_2SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_FB_p_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_FB_p_2SD = Pass_FB
+
+Pass_FB_p_2SD$isgroupoutlier = rep(NA,length(Pass_FB_p_2SD$Participant))
+Group_outliers = Pass_FB_p_2SD.participants$Participant[Pass_FB_p_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_FB_p_2SD$Participant)){
+  if (!is.na(match(Pass_FB_p_2SD$Participant[i],Group_outliers)))
+  {
+    Pass_FB_p_2SD$isgroupoutlier[i] = 1
+  } else {
+    Pass_FB_p_2SD$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_FB_p_2SD_P = Pass_FB_p_2SD[Pass_FB_p_2SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Pass_FB_p_2SD_P = mean(Pass_FB_p_2SD_P$Bias)
+Pass_FB_p_2SD_P.SDs = ddply(Pass_FB_p_2SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_FB_p_2SD_P = sqrt(sum(Pass_FB_p_2SD_P.SDs$sdBias_squared)/length(Pass_FB_p_2SD_P.SDs$Participant))
+
+hi.Pass_FB_p_2SD_P.2SD = m.Pass_FB_p_2SD_P + 2 * psd.Pass_FB_p_2SD_P
+lo.Pass_FB_p_2SD_P.2SD = m.Pass_FB_p_2SD_P - 2 * psd.Pass_FB_p_2SD_P
+
+Pass_FB_p_2SD_TP = Pass_FB_p_2SD_P[Pass_FB_p_2SD_P$Bias < hi.Pass_FB_p_2SD_P.2SD,]
+Pass_FB_p_2SD_TP = Pass_FB_p_2SD_TP[Pass_FB_p_2SD_TP$Bias > lo.Pass_FB_p_2SD_P.2SD,]
+
+# MC part
+
+
+# Remove outlier participants
+
+Pass_MC_p_2SD.participants = ddply(Pass_MC, c("Participant"), summarise, meanBias = mean(Bias))
+
+Pass_MC_p_2SD.participants$isoutlier = rep(NA,length(Pass_MC_p_2SD.participants$Participant))
+
+m.Pass_MC_p_2SD.participants = mean(Pass_MC_p_2SD.participants$meanBias)
+
+
+Pass_MC.SDs = ddply(Pass_MC, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC.participants = sqrt(sum(Pass_MC_T.SDs$sdBias_squared)/length(Pass_MC_T.SDs$Participant))
+
+hi.Pass_MC_p_2SD.participants = m.Pass_MC_p_2SD.participants + 2 * psd.Pass_MC.participants
+lo.Pass_MC_p_2SD.participants = m.Pass_MC_p_2SD.participants - 2 * psd.Pass_MC.participants
+
+for (i in 1:length(Pass_MC_p_2SD.participants$meanBias)){
+  if (Pass_MC_p_2SD.participants$meanBias[i] < hi.Pass_MC_p_2SD.participants & Pass_MC_p_2SD.participants$meanBias[i] > lo.Pass_MC_p_2SD.participants){
+    Pass_MC_p_2SD.participants$isoutlier[i] = 0
+  } else {
+    Pass_MC_p_2SD.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_MC_p_2SD = Pass_MC
+
+Pass_MC_p_2SD$isgroupoutlier = rep(NA,length(Pass_MC_p_2SD$Participant))
+Group_outliers = Pass_MC_p_2SD.participants$Participant[Pass_MC_p_2SD.participants$isoutlier == 1]
+
+for (i in 1:length(Pass_MC_p_2SD$Participant)){
+  if (!is.na(match(Pass_MC_p_2SD$Participant[i],Group_outliers)))
+  {
+    Pass_MC_p_2SD$isgroupoutlier[i] = 1
+  } else {
+    Pass_MC_p_2SD$isgroupoutlier[i] = 0
+  }
+}
+
+Pass_MC_p_2SD_P = Pass_MC_p_2SD[Pass_MC_p_2SD$isgroupoutlier == 0,]
+
+# Remove trial outliers
+
+m.Pass_MC_p_2SD_P = mean(Pass_MC_p_2SD_P$Bias)
+Pass_MC_p_2SD_P.SDs = ddply(Pass_MC_p_2SD_P, c("Participant"), summarise, sdBias = sd(Bias),
+                                                                  sdBias_squared = sdBias^2)
+psd.Pass_MC_p_2SD_P = sqrt(sum(Pass_MC_p_2SD_P.SDs$sdBias_squared)/length(Pass_MC_p_2SD_P.SDs$Participant))
+
+hi.Pass_MC_p_2SD_P.2SD = m.Pass_MC_p_2SD_P + 2 * psd.Pass_MC_p_2SD_P
+lo.Pass_MC_p_2SD_P.2SD = m.Pass_MC_p_2SD_P - 2 * psd.Pass_MC_p_2SD_P
+
+Pass_MC_p_2SD_TP = Pass_MC_p_2SD_P[Pass_MC_p_2SD_P$Bias < hi.Pass_MC_p_2SD_P.2SD,]
+Pass_MC_p_2SD_TP = Pass_MC_p_2SD_TP[Pass_MC_p_2SD_TP$Bias > lo.Pass_MC_p_2SD_P.2SD,]
+
+
+####################################################################################################
+
+
+
+```
+
+
+## A chunk here to be removed
+
+``` {r Full_All_s_3SD_TP, echo = FALSE, eval = FALSE}
+
+# Linear mixed model
+Full_All_s_3SD_TP.lmm = lmer(Bias~FBvMC*ConRew
+            +Age
+            +Gender
+            +(1+FBvMC|Participant),Full_All_s_3SD_TP,REML=FALSE)
+
+summary(Full_All_s_3SD_TP.lmm)
+
+# Linear model
+
+Full_All_s_3SD_TP.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Full_All_s_3SD_TP)
+summary(Full_All_s_3SD_TP.lm1)
+
+Full_All_s_3SD_TP.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Full_All_s_3SD_TP)
+summary(Full_All_s_3SD_TP.lm2)
+
+
+# Visualisation
+
+plot_model(Full_All_s_3SD_TP.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-20,0,20]", "ConRew"))
+
+
+```
+
+
+## A chunk here to be removed
+
+``` {r Pass_All_s_2SD_TP, echo = FALSE, eval = FALSE}
+
+# Linear mixed model
+Pass_All_s_2SD_TP.lmm = lmer(Bias~FBvMC*ConRew
+            +Age
+            +Gender
+            +(1+FBvMC|Participant),Pass_All_s_2SD_TP,REML=FALSE)
+
+summary(Pass_All_s_2SD_TP.lmm)
+
+# Linear model
+
+Pass_All_s_2SD_TP.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Pass_All_s_2SD_TP)
+summary(Pass_All_s_2SD_TP.lm1)
+
+Pass_All_s_2SD_TP.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Pass_All_s_2SD_TP)
+summary(Pass_All_s_2SD_TP.lm2)
+
+
+# Visualisation
+plot_model(Pass_All_s_2SD_TP.lm1, type = "pred", terms = c("FBvMC"))
+
+plot_model(Pass_All_s_2SD_TP.lm1, type = "pred", terms = c("FBvMC", "ConRew"))
+
+plot_model(Pass_All_s_2SD_TP.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-10,0,10]", "ConRew"))
+plot_model(Pass_All_s_2SD_TP.lm2, type = "pred", terms = c("AQ.mc","FBvMC", "ConRew"))
+
+
+
+# With Condition and Reward as factors
+Pass_All_s_2SD_TP.fac = Pass_All_s_2SD_TP
+
+Pass_All_s_2SD_TP.fac$ConRew = as.factor(Pass_All_s_2SD_TP.fac$ConRew)
+Pass_All_s_2SD_TP.fac$FBvMC = as.factor(Pass_All_s_2SD_TP.fac$FBvMC)
+
+Pass_All_s_2SD_TP.fac.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Pass_All_s_2SD_TP.fac)
+summary(Pass_All_s_2SD_TP.fac.lm1)
+
+Pass_All_s_2SD_TP.fac.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Pass_All_s_2SD_TP.fac)
+summary(Pass_All_s_2SD_TP.fac.lm2)
+
+
+plot_model(Pass_All_s_2SD_TP.fac.lm1, type = "pred", terms = c("FBvMC"))
+plot_model(Pass_All_s_2SD_TP.fac.lm1, type = "pred", terms = c("FBvMC", "ConRew"))
+plot_model(Pass_All_s_2SD_TP.fac.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-10,0,10]", "ConRew"))
+
+sd(Pass_All_s_2SD_TP.fac$AQ.mc)
+plot_model(Pass_All_s_2SD_TP.fac.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-6.77,0,6.77]", "ConRew"))
+
+
+
+
+```
+
+
+### Please select your data set based on the following parameters
+
+
+
+1. Memory task performance
+  + All participants                                  [Full]
+  + Participants who passed the memory task           [Pass]
+  
+  
+```{r option1, echo = FALSE}
+
+selectInput("option1", "",
+ c("Full", "Pass")) 
+
+
+```
+  
+2. Outliers based on...
+  + Full dataset                                      [All]
+  + False Belief and Memory Control separately        [Sep]
+  
+  
+```{r option2, echo = FALSE}
+
+selectInput("option2", "",
+ c("Sep","All")) 
+
+
+```
+
+
+3. Type of standard deviation
+  + Standard approach                                 [s]
+  + Pooled approach                                   [p]
+
+```{r option3, echo = FALSE}
+
+selectInput("option3", "",
+ c("s", "p")) 
+
+
+```  
+
+
+4. Outlier cutoff score
+  + 3 SD (standard approach)                          [3SD]
+  + 2 SD (if normality assumption is violated)        [2SD]
+
+```{r option4, echo = FALSE}
+
+selectInput("option4", "",
+ c("3SD", "2SD")) 
+
+
+```  
+  
+5. Outlier removal order
+  + Trials, then participants (Bhisma's suggestion)   [TP]
+  + Participants, then trials                         [PT]
+  
+  Note that outlier cutoff scores are re-calculated for the second step
+  
+```{r option5, echo = FALSE}
+
+selectInput("option5", "",
+ c("TP", "PT")) 
+
+
+```
+
+
+6. Condition and Reward as
+  + Numeric values                                    
+  + Factors                                           
+
+
+```{r option6, echo = FALSE}
+
+selectInput("option6", "",
+ c("Numeric values", "Factors")) 
+
+
+renderText({
+  
+  opt1 <- input$option1
+  opt2 <- input$option2
+  opt3 <- input$option3
+  opt4 <- input$option4
+  opt5 <- input$option5
+  opt6 <- input$option6
+  
+paste(c("You have chosen the following data set: ",opt1,"_",opt2,"_",opt3,"_",opt4,"_",opt5,", with Condition and Reward as: ", opt6), collapse = "")
+
+})
+
+
+```
+
+
+
+
+
+# Model output and visualisation
+
+Note: Visualisation based on full model (Rew x Con x AQ)
+
+
+
+## Number of trials in dataset
+
+Total trials
+Total participants
+Tabel with trials per participant
+
+Note: use renderTable or other render function
+
+## Linear mixed model results
+
+Note: use renderTable or other render function
+
+## Linear model results
+
+Note: use renderTable or other render function
+
+
+## Main effect of Belief condition
+
+Note: potentially add option to choose order of Condition, Reward and AQ for plots (X, Y and Z)
+
+
+``` {r plot1, echo = FALSE}
+  
+renderPlot({
+  
+  opt1 <- input$option1
+  opt2 <- input$option2
+  opt3 <- input$option3
+  opt4 <- input$option4
+  opt5 <- input$option5
+  
+Choice_string = paste0(c(opt1,opt2,opt3,opt4))
+
+Choice = get(Choice_string)
+  
+   if (input$option6 == "Numeric values"){
+  Choice$FBvMC = as.numeric(Choice$FBvMC)
+  Choice$ConRew = as.numeric(Choice$ConRew)
+} else if (input$option6 == "Factors"){
+  Choice$FBvMC = as.factor(Choice$FBvMC)
+  Choice$ConRew = as.factor(Choice$ConRew)
+}
+   
+   
+ Choice.model1 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Choice)
+ plot_model(Choice.model1, title = "Predicted bias per Condition", axis.title = c("False Belief vs Memory Control", "Bias"),  type = "pred", terms = c("FBvMC"))
+}) 
+
+```
+
+## Belief x Reward
+
+``` {r plot2, echo = FALSE}
+renderPlot({
+  
+  opt1 <- input$option1
+  opt2 <- input$option2
+  opt3 <- input$option3
+  opt4 <- input$option4
+  opt5 <- input$option5
+  
+Choice_string = paste0(c(opt1,opt2,opt3,opt4,opt5))
+
+Choice = get(Choice_string)
+
+   if (input$option6 == "Numeric values"){
+  Choice$FBvMC = as.numeric(Choice$FBvMC)
+  Choice$ConRew = as.numeric(Choice$ConRew)
+} else if (input$option6 == "Factors"){
+  Choice$FBvMC = as.factor(Choice$FBvMC)
+  Choice$ConRew = as.factor(Choice$ConRew)
+}
+   
+ 
+ 
+ Choice.model2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Choice)
+ plot_model(Choice.model2, title = "Predicted bias per Condition x Reward", axis.title = c("False Belief vs Memory Control", "Bias"), type = "pred", terms = c("FBvMC", "ConRew"))
+}) 
+
+
+```
+
+## Belief x Reward x AQ
+
+NOTE: values for AQ lines should be +1SD and -1SD based on chosen dataset
+
+``` {r plot3, echo = FALSE}
+
+renderPlot({
+
+  opt1 <- input$option1
+  opt2 <- input$option2
+  opt3 <- input$option3
+  opt4 <- input$option4
+  opt5 <- input$option5
+  
+Choice_string = paste0(c(opt1,opt2,opt3,opt4,opt5))
+
+Choice = get(Choice_string)
+  
+   if (input$option6 == "Numeric values"){
+  Choice$FBvMC = as.numeric(Choice$FBvMC)
+  Choice$ConRew = as.numeric(Choice$ConRew)
+} else if (input$option6 == "Factors"){
+  Choice$FBvMC = as.factor(Choice$FBvMC)
+  Choice$ConRew = as.factor(Choice$ConRew)
+}
+   
+ 
+ 
+ Choice.model3 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Choice)
+ plot_model(Choice.model3, title = "Predicted bias per Condition x AQ category x Reward", axis.title = c("False Belief vs Memory Control", "Bias"), type = "pred", terms = c("FBvMC", "AQ.mc [-6.77, 0, 6.77]", "ConRew"))
+}) 
+
+```
+
+
+
+``` {r prosopagnosia, echo = FALSE, message = FALSE}
+
+# Note: change dataset names to new names
+
+# PI20_pass = ddply(simondata, "Participant", summarise, PI20_score = mean(PI20))
+# PI20_full = ddply(simondata_full,"Participant",summarise, PI20_score = mean(PI20))
+
+```

@@ -1,0 +1,660 @@
+---
+title: "Sandbox study - multiple approaches"
+author: "Kristian Tempelmans Plat & Simon Brett"
+date: "15 March 2018"
+output: html_document
+runtime: shiny
+---
+
+# Sandbox study: the effect of reward on false belief bias
+
+This script looks at Simon Brett's Sandbox task data from various angles.
+
+Per approach, the following analyses are done:
+
+* linear mixed model
+* linear model
+* visualisation
+
+
+In addition, this script investigates whether prosopagnosia traits explains task performance
+
+1. Do those participants who fail the memory task have a higher prosopagnosia score?
+
+2. In the dataset with passing participants, is there a correlation between prosopagnosia and FB bias?
+
+
+
+
+
+
+
+``` {r librarypreparation, echo = FALSE, message = FALSE, warning = FALSE}
+
+library(lme4)
+library(lmerTest)
+library(simr)
+library(plyr)
+
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(plyr)
+
+theme_set(theme_sjplot())
+
+
+```
+
+
+``` {r prep_1_2, echo = FALSE, warning = FALSE, message = FALSE}
+
+# --------
+# Option 1
+# --------
+
+# FULL
+
+    # Get dataset
+setwd("C:/Users/ct886924/Documents/STUDIES/Study1_MT/Simon_data/Full_dataset")
+Full=read.csv("Full_simondata_set.csv")
+
+    # Remove NAs (if they are present)
+Full = na.omit(Full)
+
+    # Mean AQ
+Full.AQ_means = mean(Full$AQ)
+for (i in 1:length(Full$AQ)){
+  Full$AQ.mc[i] = Full$AQ[i] - Full.AQ_means
+}
+
+    # Rename columns
+names(Full)[14] = "FBvMC"
+names(Full)[15] = "SvL"
+
+####################################################################################################
+
+
+# PASS
+
+    # Get dataset
+setwd("C:/Users/ct886924/Documents/STUDIES/Study1_MT/Simon_data")
+Pass=read.csv("MergedRdata2.csv")
+
+    # Mean AQ
+Pass.AQ_means = mean(Pass$AQ)
+for (i in 1:length(Pass$AQ)){
+  Pass$AQ.mc[i] = Pass$AQ[i] - Pass.AQ_means
+}
+
+    # Rename columns
+names(Pass)[14] = "FBvMC"
+names(Pass)[15] = "SvL"
+
+
+####################################################################################################
+
+# --------
+# Option 2
+# --------
+
+
+# FULL_ALL
+
+    # No split
+
+Full_All = Full
+
+####################################################################################################
+
+# FULL_SEP
+
+    # Split dataset into False Belief and Memory Control subset
+
+Full_FB = Full[Full$FBvMC == 1,]
+Full_MC = Full[Full$FBvMC == 2,]
+
+
+####################################################################################################
+
+
+# PASS_ALL
+
+    # No split
+
+Pass_All = Pass
+
+####################################################################################################
+
+
+# PASS_SEP
+
+    # Split dataset into False Belief and Memory Control subset
+
+Pass_FB = Pass[Pass$FBvMC == 1,]
+Pass_MC = Pass[Pass$FBvMC == 2,]
+
+
+####################################################################################################
+
+
+```
+
+
+``` {r normcheck, echo = FALSE, warning = FALSE, message = FALSE, eval = FALSE}
+
+library(nortest)
+
+
+    # Normality check for dataset
+ad.test(Full_All$Bias)
+ad.test(Pass_All$Bias)
+
+```
+
+``` {r pre_3_and_4, echo = FALSE, warning = FALSE, message = FALSE}
+# ------------
+# Option 3 & 4
+# ------------
+
+
+# FULL_ALL_3SD_TP ####
+
+    # Removal of outlier trials
+
+m.Full_All = mean(Full_All$Bias)
+sd.Full_All = sd(Full_All$Bias)
+
+hi.Full_All.3SD = m.Full_All + 3 * sd.Full_All
+lo.Full_All.3SD = m.Full_All - 3 * sd.Full_All
+
+Full_All_3SD_T = Full_All[Full_All$Bias < hi.Full_All.3SD,]
+Full_All_3SD_T = Full_All_3SD_T[Full_All_3SD_T$Bias > lo.Full_All.3SD,]
+
+
+    # Removal of outlier participants
+
+Full_All_3SD_T.participants = ddply(Full_All_3SD_T, c("Participant", "FBvMC"), summarise, meanBias = mean(Bias))
+
+Full_All_3SD_T.participants$isoutlier = rep(NA,length(Full_All_3SD_T.participants$Participant))
+
+m.Full_All_3SD_T.participants = mean(Full_All_3SD_T.participants$meanBias)
+sd.Full_All_3SD_T.participants = sd(Full_All_3SD_T.participants$meanBias)
+
+hi.Full_All_3SD_T.participants = m.Full_All_3SD_T.participants + 3 * sd.Full_All_3SD_T.participants
+lo.Full_All_3SD_T.participants = m.Full_All_3SD_T.participants - 3 * sd.Full_All_3SD_T.participants
+
+for (i in 1:length(Full_All_3SD_T.participants$meanBias)){
+  if (Full_All_3SD_T.participants$meanBias[i] < hi.Full_All_3SD_T.participants & Full_All_3SD_T.participants$meanBias[i] > lo.Full_All_3SD_T.participants){
+    Full_All_3SD_T.participants$isoutlier[i] = 0
+  } else {
+    Full_All_3SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Full_All_3SD_TP = Full_All_3SD_T[Full_All_3SD_T$Participant != 1,]
+
+
+####################################################################################################
+
+# FULL_ALL_2SD_TP ####
+
+    # 2 SD cutoff because normality assumption is violated for Full_All data set
+
+hi.Full_All.2SD = m.Full_All + 2 * sd.Full_All
+lo.Full_All.2SD = m.Full_All - 2 * sd.Full_All
+
+Full_All_2SD_T = Full_All[Full_All$Bias < hi.Full_All.2SD,]
+Full_All_2SD_T = Full_All_2SD_T[Full_All_2SD_T$Bias > lo.Full_All.2SD,]
+
+
+    
+
+####################################################################################################
+
+# FULL_ALL_PSD_TP ####
+
+####################################################################################################
+
+
+# FULL_ALL_3SD_PT ####
+
+####################################################################################################
+
+# FULL_ALL_2SD_PT ####
+
+# 2 SD cutoff because normality assumption is violated for Full_All data set
+
+####################################################################################################
+
+# FULL_ALL_PSD_PT ####
+
+####################################################################################################
+
+
+
+# FULL_SEP_3SD_TP ####
+
+####################################################################################################
+
+# FULL_SEP_2SD_TP ####
+
+
+####################################################################################################
+
+# FULL_SEP_PSD_TP ####
+
+####################################################################################################
+
+
+# FULL_SEP_3SD_PT ####
+
+####################################################################################################
+
+# FULL_SEP_2SD_PT ####
+
+####################################################################################################
+
+# FULL_SEP_PSD_PT ####
+
+####################################################################################################
+
+
+
+
+# PASS_ALL_3SD_TP ####
+
+####################################################################################################
+
+# PASS_ALL_2SD_TP ####
+
+
+# 2 SD cutoff because normality assumption is violated for Pass_All data set
+
+    # Removal of outlier trials
+
+m.Pass_All = mean(Pass_All$Bias)
+sd.Pass_All = sd(Pass_All$Bias)
+
+hi.Pass_All.2SD = m.Pass_All + 2 * sd.Pass_All
+lo.Pass_All.2SD = m.Pass_All - 2 * sd.Pass_All
+
+Pass_All_2SD_T = Pass_All[Pass_All$Bias < hi.Pass_All.2SD,]
+Pass_All_2SD_T = Pass_All_2SD_T[Pass_All_2SD_T$Bias > lo.Pass_All.2SD,]
+
+
+    # Removal of outlier participants
+
+Pass_All_2SD_T.participants = ddply(Pass_All_2SD_T, c("Participant", "FBvMC"), summarise, meanBias = mean(Bias))
+
+Pass_All_2SD_T.participants$isoutlier = rep(NA,length(Pass_All_2SD_T.participants$Participant))
+
+m.Pass_All_2SD_T.participants = mean(Pass_All_2SD_T.participants$meanBias)
+sd.Pass_All_2SD_T.participants = sd(Pass_All_2SD_T.participants$meanBias)
+
+hi.Pass_All_2SD_T.participants = m.Pass_All_2SD_T.participants + 2 * sd.Pass_All_2SD_T.participants
+lo.Pass_All_2SD_T.participants = m.Pass_All_2SD_T.participants - 2 * sd.Pass_All_2SD_T.participants
+
+for (i in 1:length(Pass_All_2SD_T.participants$meanBias)){
+  if (Pass_All_2SD_T.participants$meanBias[i] < hi.Pass_All_2SD_T.participants & Pass_All_2SD_T.participants$meanBias[i] > lo.Pass_All_2SD_T.participants){
+    Pass_All_2SD_T.participants$isoutlier[i] = 0
+  } else {
+    Pass_All_2SD_T.participants$isoutlier[i] = 1
+  }
+}
+
+    # Dataset specification
+Pass_All_2SD_TP = Pass_All_2SD_T[Pass_All_2SD_T$Participant != 1,]
+
+
+
+
+####################################################################################################
+
+# PASS_ALL_PSD_TP ####
+
+####################################################################################################
+
+
+# PASS_ALL_3SD_PT ####
+
+####################################################################################################
+
+# PASS_ALL_2SD_PT ####
+
+# 2 SD cutoff because normality assumption is violated for Pass_All data set
+
+####################################################################################################
+
+# PASS_ALL_PSD_PT ####
+
+####################################################################################################
+
+
+
+# PASS_SEP_3SD_TP ####
+
+####################################################################################################
+
+# PASS_SEP_2SD_TP ####
+
+####################################################################################################
+
+# PASS_SEP_PSD_TP ####
+
+####################################################################################################
+
+
+# PASS_SEP_3SD_PT ####
+
+####################################################################################################
+
+# PASS_SEP_2SD_PT ####
+
+####################################################################################################
+
+# PASS_SEP_PSD_PT ####
+
+####################################################################################################
+
+
+
+
+```
+
+
+``` {r Full_All_3SD_TP, echo = FALSE, eval = FALSE}
+
+# Linear mixed model
+Full_All_3SD_TP.lmm = lmer(Bias~FBvMC*ConRew
+            +Age
+            +Gender
+            +(1+FBvMC|Participant),Full_All_3SD_TP,REML=FALSE)
+
+summary(Full_All_3SD_TP.lmm)
+
+# Linear model
+
+Full_All_3SD_TP.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Full_All_3SD_TP)
+summary(Full_All_3SD_TP.lm1)
+
+Full_All_3SD_TP.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Full_All_3SD_TP)
+summary(Full_All_3SD_TP.lm2)
+
+
+# Visualisation
+
+plot_model(Full_All_3SD_TP.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-20,0,20]", "ConRew"))
+
+
+```
+
+``` {r Pass_All_2SD_TP, echo = FALSE, eval = FALSE}
+
+# Linear mixed model
+Pass_All_2SD_TP.lmm = lmer(Bias~FBvMC*ConRew
+            +Age
+            +Gender
+            +(1+FBvMC|Participant),Pass_All_2SD_TP,REML=FALSE)
+
+summary(Pass_All_2SD_TP.lmm)
+
+# Linear model
+
+Pass_All_2SD_TP.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Pass_All_2SD_TP)
+summary(Pass_All_2SD_TP.lm1)
+
+Pass_All_2SD_TP.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Pass_All_2SD_TP)
+summary(Pass_All_2SD_TP.lm2)
+
+
+# Visualisation
+plot_model(Pass_All_2SD_TP.lm1, type = "pred", terms = c("FBvMC"))
+
+plot_model(Pass_All_2SD_TP.lm1, type = "pred", terms = c("FBvMC", "ConRew"))
+
+plot_model(Pass_All_2SD_TP.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-10,0,10]", "ConRew"))
+plot_model(Pass_All_2SD_TP.lm2, type = "pred", terms = c("AQ.mc","FBvMC", "ConRew"))
+
+
+
+# With Condition and Reward as factors
+Pass_All_2SD_TP.fac = Pass_All_2SD_TP
+
+Pass_All_2SD_TP.fac$ConRew = as.factor(Pass_All_2SD_TP.fac$ConRew)
+Pass_All_2SD_TP.fac$FBvMC = as.factor(Pass_All_2SD_TP.fac$FBvMC)
+
+Pass_All_2SD_TP.fac.lm1 = lm(Bias~FBvMC*ConRew + Age + Gender,Pass_All_2SD_TP.fac)
+summary(Pass_All_2SD_TP.fac.lm1)
+
+Pass_All_2SD_TP.fac.lm2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,Pass_All_2SD_TP.fac)
+summary(Pass_All_2SD_TP.fac.lm2)
+
+
+plot_model(Pass_All_2SD_TP.fac.lm1, type = "pred", terms = c("FBvMC"))
+plot_model(Pass_All_2SD_TP.fac.lm1, type = "pred", terms = c("FBvMC", "ConRew"))
+plot_model(Pass_All_2SD_TP.fac.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-10,0,10]", "ConRew"))
+
+sd(Pass_All_2SD_TP.fac$AQ.mc)
+plot_model(Pass_All_2SD_TP.fac.lm2, type = "pred", terms = c("FBvMC", "AQ.mc [-6.77,0,6.77]", "ConRew"))
+
+
+
+
+```
+
+
+### Main choice (to be removed)
+
+```{r data, echo = FALSE}
+
+selectInput("data", "",
+ c("Full_All_3SD_TP", "Pass_All_2SD_TP")) 
+
+selectInput("type", "",
+ c("Numeric", "Factors")) 
+
+
+```
+
+
+
+
+### Please select your data set based on the following parameters
+
+
+
+1. Memory task performance
+  + All participants                                  [Full]
+  + Participants who passed the memory task           [Pass]
+  
+  
+```{r option1, echo = FALSE}
+
+selectInput("option1", "",
+ c("Full", "Pass")) 
+
+
+```
+  
+2. Outliers based on...
+  + Full dataset                                      [All]
+  + False Belief and Memory Control separately        [Sep]
+  
+  
+```{r option2, echo = FALSE}
+
+selectInput("option2", "",
+ c("All", "Sep")) 
+
+
+```
+
+
+3. Outlier cutoff score
+  + 3 SD (standard approach)                          [3SD]
+  + 2 SD (if normality assumption is violated)        [2SD]
+  + Pooled SD                                         [pSD]
+  
+```{r option3, echo = FALSE}
+
+selectInput("option3", "",
+ c("3SD", "2SD", "pSD")) 
+
+
+```  
+  
+4. Outlier removal order
+  + Trials, then participants (Bhisma's suggestion)   [TP]
+  + Participants, then trials                         [PT]
+  
+```{r option4, echo = FALSE}
+
+selectInput("option4", "",
+ c("TP", "PT")) 
+
+
+```
+
+
+5. Condition and Reward as
+  + Numeric values                                    [nume]
+  + Factors                                           [fact]
+
+
+```{r option5, echo = FALSE}
+
+selectInput("option5", "",
+ c("nume", "fact")) 
+
+
+```
+
+
+## Create chunk that shows chosen data set, by pasting the variables defined above together
+
+Note: delete following chunk after full tree is created
+
+```{r showdataset, echo = FALSE}
+
+renderText({
+
+  opt1 <- input$option1
+  opt2 <- input$option2
+  opt3 <- input$option3
+  opt4 <- input$option4
+  opt5 <- input$option5
+  
+  paste(c(opt1,"_",opt2,"_",opt3,"_",opt4,".",opt5), collapse = "")
+    
+})
+
+```
+
+
+Note: potentially add option to choose order of Condition, Reward and AQ for plots (X, Y and Z)
+
+# Model output and visualisation
+
+Note: Visualisation based on full model (Rew x Con x AQ)
+
+
+
+## Number of trials in dataset
+
+Note: use renderTable or other render function
+
+## Linear mixed model results
+
+Note: use renderTable or other render function
+
+## Linear model results
+
+Note: use renderTable or other render function
+
+
+## Main effect of Belief condition
+
+``` {r plot1, echo = FALSE}
+
+
+renderPlot({
+   choice <- get(input$data)
+   
+   if (input$type == "Numeric"){
+  choice$FBvMC = as.numeric(choice$FBvMC)
+  choice$ConRew = as.numeric(choice$ConRew)
+} else if (input$type == "Factors"){
+  choice$FBvMC = as.factor(choice$FBvMC)
+  choice$ConRew = as.factor(choice$ConRew)
+}
+   
+   
+ choice.model1 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,choice)
+ plot_model(choice.model1, title = "Predicted bias per Condition", axis.title = c("False Belief vs Memory Control", "Bias"),  type = "pred", terms = c("FBvMC"))
+}) 
+
+```
+
+## Belief x Reward
+
+``` {r plot2, echo = FALSE}
+renderPlot({
+ choice <- get(input$data)
+ 
+ 
+    
+   if (input$type == "Numeric"){
+  choice$FBvMC = as.numeric(choice$FBvMC)
+  choice$ConRew = as.numeric(choice$ConRew)
+} else if (input$type == "Factors"){
+  choice$FBvMC = as.factor(choice$FBvMC)
+  choice$ConRew = as.factor(choice$ConRew)
+}
+   
+ 
+ 
+ choice.model2 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,choice)
+ plot_model(choice.model2, title = "Predicted bias per Condition x Reward", axis.title = c("False Belief vs Memory Control", "Bias"), type = "pred", terms = c("FBvMC", "ConRew"))
+}) 
+
+
+```
+
+## Belief x Reward x AQ
+
+NOTE: values for AQ lines should be +1SD and -1SD based on chosen dataset
+
+``` {r plot3, echo = FALSE}
+
+renderPlot({
+ choice <- get(input$data)
+ 
+    
+   if (input$type == "Numeric"){
+  choice$FBvMC = as.numeric(choice$FBvMC)
+  choice$ConRew = as.numeric(choice$ConRew)
+} else if (input$type == "Factors"){
+  choice$FBvMC = as.factor(choice$FBvMC)
+  choice$ConRew = as.factor(choice$ConRew)
+}
+   
+ 
+ 
+ choice.model3 = lm(Bias~FBvMC*ConRew*AQ.mc + Age + Gender,choice)
+ plot_model(choice.model3, title = "Predicted bias per Condition x AQ category x Reward", axis.title = c("False Belief vs Memory Control", "Bias"), type = "pred", terms = c("FBvMC", "AQ.mc [-6.77, 0, 6.77]", "ConRew"))
+}) 
+
+```
+
+
+
+``` {r prosopagnosia, echo = FALSE, message = FALSE}
+
+# Note: change dataset names to new names
+
+# PI20_pass = ddply(simondata, "Participant", summarise, PI20_score = mean(PI20))
+# PI20_full = ddply(simondata_full,"Participant",summarise, PI20_score = mean(PI20))
+
+```
